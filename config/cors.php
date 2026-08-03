@@ -26,6 +26,9 @@ return [
         'trim',
         explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))
     ))) ?: [
+        // Deployed frontend demo.
+        'https://demo.sga.techbizafrica.com',
+
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:3002',
