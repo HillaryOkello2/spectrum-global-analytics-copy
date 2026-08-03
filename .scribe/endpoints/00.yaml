@@ -1,0 +1,209 @@
+name: 'Public Catalogue'
+description: |-
+
+  Public catalogue entry point: the nine Components (FR-04). `productsCount`
+  counts published, non-hidden products only — the vault's equivalent count
+  includes drafts and hidden products and will not match.
+endpoints:
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: api/v1/catalog/components
+    metadata:
+      custom: []
+      groupName: 'Public Catalogue'
+      groupDescription: |-
+
+        Public catalogue entry point: the nine Components (FR-04). `productsCount`
+        counts published, non-hidden products only — the vault's equivalent count
+        includes drafts and hidden products and will not match.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 200
+        content: '{"data":[{"publicId":"03c95593-ef51-4cb3-bbbf-defe42271260","name":"SGA Analytics Abstract Papers (AP)","code":"A1","batch":1,"isTransactional":false,"sortOrder":1,"productsCount":1},{"publicId":"67a0fbce-f8b0-4245-b681-bdd329bd0f0d","name":"SGA Analytics Essay Series (ES)","code":"A2","batch":1,"isTransactional":false,"sortOrder":2,"productsCount":1},{"publicId":"5511c999-96b7-4a40-8c4e-53d9af748404","name":"Analytics Book Series (BS)","code":"A3","batch":1,"isTransactional":false,"sortOrder":3,"productsCount":1},{"publicId":"43e7e671-1be3-4086-9aa7-ccbbb62dca06","name":"Daily Strategic Intelligence Analytics Brief (DB)","code":"A4","batch":2,"isTransactional":false,"sortOrder":4,"productsCount":1},{"publicId":"e790a4fc-289b-446a-91f4-26d334dd1096","name":"Weekly Strategic Intelligence Analytics Highlights (WH)","code":"A5","batch":2,"isTransactional":false,"sortOrder":5,"productsCount":1},{"publicId":"36624015-41ca-4393-aab5-d215d3fa34a8","name":"Monthly Strategic Intelligence Analytics Focus (MF)","code":"A6","batch":2,"isTransactional":false,"sortOrder":6,"productsCount":0},{"publicId":"bd09d707-b25b-4b4c-b1ea-0cdecee3ed33","name":"Strategic Analytics Research Papers (RP)","code":"A7","batch":3,"isTransactional":false,"sortOrder":7,"productsCount":0},{"publicId":"7729b068-928a-4cd1-b6b0-957df3668ee8","name":"Analytics White Papers - Corporate (WP\/C)","code":"A8","batch":3,"isTransactional":false,"sortOrder":8,"productsCount":0},{"publicId":"a79fede5-8d29-448e-9051-1fa2f556abc6","name":"Analytics White Papers - Governmental (WP\/G)","code":"A9","batch":3,"isTransactional":false,"sortOrder":9,"productsCount":0}]}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          x-ratelimit-limit: '60'
+          x-ratelimit-remaining: '55'
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: 'api/v1/catalog/components/{component_public_id}/products'
+    metadata:
+      custom: []
+      groupName: 'Public Catalogue'
+      groupDescription: |-
+
+        Public catalogue: visible Products of a Component (FR-05/08).
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      component_public_id:
+        custom: []
+        name: component_public_id
+        description: 'The ID of the component public.'
+        required: true
+        example: 03c95593-ef51-4cb3-bbbf-defe42271260
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      component_public_id: 03c95593-ef51-4cb3-bbbf-defe42271260
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 200
+        content: '{"data":[{"publicId":"3d8e317c-06aa-41d3-b9d5-6fed7b61bc62","code":"SGA.A1.2026-08.001","title":"SGA Analytics Abstract Papers (AP)","excerpt":"Placeholder abstract for \"SGA Analytics Abstract Papers (AP)\" (SGA Analytics Abstract Papers (AP)). This stands in for the proofreader-written abstract during l...","publishedAt":"2026-08-02 16:37:33","component":{"publicId":"03c95593-ef51-4cb3-bbbf-defe42271260","name":"SGA Analytics Abstract Papers (AP)","code":"A1","batch":1,"isTransactional":false,"sortOrder":1}}],"links":{"first":"http:\/\/localhost:8000\/api\/v1\/catalog\/components\/03c95593-ef51-4cb3-bbbf-defe42271260\/products?page=1","last":"http:\/\/localhost:8000\/api\/v1\/catalog\/components\/03c95593-ef51-4cb3-bbbf-defe42271260\/products?page=1","prev":null,"next":null},"meta":{"current_page":1,"from":1,"last_page":1,"links":[{"url":null,"label":"&laquo; Previous","page":null,"active":false},{"url":"http:\/\/localhost:8000\/api\/v1\/catalog\/components\/03c95593-ef51-4cb3-bbbf-defe42271260\/products?page=1","label":"1","page":1,"active":true},{"url":null,"label":"Next &raquo;","page":null,"active":false}],"path":"http:\/\/localhost:8000\/api\/v1\/catalog\/components\/03c95593-ef51-4cb3-bbbf-defe42271260\/products","per_page":20,"to":1,"total":1}}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          x-ratelimit-limit: '60'
+          x-ratelimit-remaining: '55'
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: api/v1/tiers
+    metadata:
+      custom: []
+      groupName: 'Public Catalogue'
+      groupDescription: |-
+
+        Tier cards for the subscription page (§14.7, Annex 3).
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 200
+        content: '{"data":[{"publicId":"e071dd03-ade0-45e4-a870-7e09de85b275","name":"Freemium","price":"0.00","currency":"USD","billingPeriod":"monthly","allocations":[{"componentCode":"A1","componentName":"SGA Analytics Abstract Papers (AP)","accessType":"metered","monthlyLimit":10},{"componentCode":"A2","componentName":"SGA Analytics Essay Series (ES)","accessType":"metered","monthlyLimit":3},{"componentCode":"A3","componentName":"Analytics Book Series (BS)","accessType":"metered","monthlyLimit":2},{"componentCode":"A4","componentName":"Daily Strategic Intelligence Analytics Brief (DB)","accessType":"denied","monthlyLimit":null},{"componentCode":"A5","componentName":"Weekly Strategic Intelligence Analytics Highlights (WH)","accessType":"denied","monthlyLimit":null},{"componentCode":"A6","componentName":"Monthly Strategic Intelligence Analytics Focus (MF)","accessType":"denied","monthlyLimit":null},{"componentCode":"A7","componentName":"Strategic Analytics Research Papers (RP)","accessType":"denied","monthlyLimit":null},{"componentCode":"A8","componentName":"Analytics White Papers - Corporate (WP\/C)","accessType":"denied","monthlyLimit":null},{"componentCode":"A9","componentName":"Analytics White Papers - Governmental (WP\/G)","accessType":"denied","monthlyLimit":null}]},{"publicId":"e662760b-1208-4e2c-9446-37b52544598b","name":"Premium","price":"49.99","currency":"USD","billingPeriod":"monthly","allocations":[{"componentCode":"A1","componentName":"SGA Analytics Abstract Papers (AP)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A2","componentName":"SGA Analytics Essay Series (ES)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A3","componentName":"Analytics Book Series (BS)","accessType":"metered","monthlyLimit":5},{"componentCode":"A4","componentName":"Daily Strategic Intelligence Analytics Brief (DB)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A5","componentName":"Weekly Strategic Intelligence Analytics Highlights (WH)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A6","componentName":"Monthly Strategic Intelligence Analytics Focus (MF)","accessType":"denied","monthlyLimit":null},{"componentCode":"A7","componentName":"Strategic Analytics Research Papers (RP)","accessType":"denied","monthlyLimit":null},{"componentCode":"A8","componentName":"Analytics White Papers - Corporate (WP\/C)","accessType":"metered","monthlyLimit":2},{"componentCode":"A9","componentName":"Analytics White Papers - Governmental (WP\/G)","accessType":"metered","monthlyLimit":2}]},{"publicId":"81893885-df51-4bc9-9fbc-8ed439394e39","name":"Superior","price":"99.99","currency":"USD","billingPeriod":"monthly","allocations":[{"componentCode":"A1","componentName":"SGA Analytics Abstract Papers (AP)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A2","componentName":"SGA Analytics Essay Series (ES)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A3","componentName":"Analytics Book Series (BS)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A4","componentName":"Daily Strategic Intelligence Analytics Brief (DB)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A5","componentName":"Weekly Strategic Intelligence Analytics Highlights (WH)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A6","componentName":"Monthly Strategic Intelligence Analytics Focus (MF)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A7","componentName":"Strategic Analytics Research Papers (RP)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A8","componentName":"Analytics White Papers - Corporate (WP\/C)","accessType":"metered","monthlyLimit":10},{"componentCode":"A9","componentName":"Analytics White Papers - Governmental (WP\/G)","accessType":"metered","monthlyLimit":10}]},{"publicId":"60f668af-d17b-4fa6-a67f-2271d28f0c51","name":"Platinum","price":"199.99","currency":"USD","billingPeriod":"monthly","allocations":[{"componentCode":"A1","componentName":"SGA Analytics Abstract Papers (AP)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A2","componentName":"SGA Analytics Essay Series (ES)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A3","componentName":"Analytics Book Series (BS)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A4","componentName":"Daily Strategic Intelligence Analytics Brief (DB)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A5","componentName":"Weekly Strategic Intelligence Analytics Highlights (WH)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A6","componentName":"Monthly Strategic Intelligence Analytics Focus (MF)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A7","componentName":"Strategic Analytics Research Papers (RP)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A8","componentName":"Analytics White Papers - Corporate (WP\/C)","accessType":"unlimited","monthlyLimit":null},{"componentCode":"A9","componentName":"Analytics White Papers - Governmental (WP\/G)","accessType":"unlimited","monthlyLimit":null}]}]}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          x-ratelimit-limit: '60'
+          x-ratelimit-remaining: '55'
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: 'api/v1/products/{product_public_id}/preview'
+    metadata:
+      custom: []
+      groupName: 'Public Catalogue'
+      groupDescription: |-
+
+        Locked content preview: abstract + lock + subscribe prompt (FR-09, §14.6).
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      product_public_id:
+        custom: []
+        name: product_public_id
+        description: 'The ID of the product public.'
+        required: true
+        example: 3d8e317c-06aa-41d3-b9d5-6fed7b61bc62
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      product_public_id: 3d8e317c-06aa-41d3-b9d5-6fed7b61bc62
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 200
+        content: '{"data":{"publicId":"3d8e317c-06aa-41d3-b9d5-6fed7b61bc62","code":"SGA.A1.2026-08.001","title":"SGA Analytics Abstract Papers (AP)","abstract":"Placeholder abstract for \"SGA Analytics Abstract Papers (AP)\" (SGA Analytics Abstract Papers (AP)). This stands in for the proofreader-written abstract during local development and is not real analysis. It is what visitors and non-entitled subscribers see in place of the full document.","locked":true,"publishedAt":"2026-08-02 16:37:33","component":{"publicId":"03c95593-ef51-4cb3-bbbf-defe42271260","name":"SGA Analytics Abstract Papers (AP)","code":"A1","batch":1,"isTransactional":false,"sortOrder":1}}}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          x-ratelimit-limit: '60'
+          x-ratelimit-remaining: '55'
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
