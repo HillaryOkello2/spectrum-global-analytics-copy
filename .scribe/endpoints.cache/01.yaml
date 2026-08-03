@@ -110,7 +110,7 @@ endpoints:
         name: payment_method
         description: ''
         required: false
-        example: mpesa
+        example: card
         type: string
         enumValues:
           - mpesa
@@ -126,7 +126,7 @@ endpoints:
       country: d
       password: architecto
       tier: architecto
-      payment_method: mpesa
+      payment_method: card
     fileParameters: []
     responses: []
     responseFields: []

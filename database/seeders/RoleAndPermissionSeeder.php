@@ -19,6 +19,7 @@ class RoleAndPermissionSeeder extends Seeder
             'manage subscribers',
             'view audit logs',
             'view analytics',
+            'view transaction history',
             'manage vault',
             'manage topics',
             'proofread products',

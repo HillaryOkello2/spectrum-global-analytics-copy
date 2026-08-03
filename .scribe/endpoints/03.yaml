@@ -306,7 +306,7 @@ endpoints:
         name: payment_method
         description: ''
         required: false
-        example: mpesa
+        example: card
         type: string
         enumValues:
           - mpesa
@@ -315,7 +315,7 @@ endpoints:
         nullable: true
         deprecated: false
     cleanBodyParameters:
-      payment_method: mpesa
+      payment_method: card
     fileParameters: []
     responses: []
     responseFields: []
@@ -366,7 +366,7 @@ endpoints:
         name: payment_method
         description: ''
         required: false
-        example: mpesa
+        example: card
         type: string
         enumValues:
           - mpesa
@@ -376,7 +376,7 @@ endpoints:
         deprecated: false
     cleanBodyParameters:
       tier: architecto
-      payment_method: mpesa
+      payment_method: card
     fileParameters: []
     responses: []
     responseFields: []

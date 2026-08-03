@@ -51,6 +51,12 @@ integration pass, then work through the [migration checklist](#frontend-migratio
 | Task board gained the status **`awaiting_redaction`** and two actions | See [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
 | **Approving no longer publishes.** Approved products go live on a scheduled FIFO release | See [§12](#12-the-content-lifecycle-how-products-appear) |
 
+### Additions
+
+| New | Where |
+|---|---|
+| **Transaction history** — `GET /admin/transactions` and `/{transaction}`, gated by the new `view transaction history` permission | [§9 Transaction history](#transaction-history-fr-42) |
+
 ### Earlier changes
 
 | Change | Where |
@@ -781,6 +787,7 @@ Entry to `/admin/*` requires the **`access admin portal`** permission, and each 
 | `/admin/users`, `/admin/roles`, `/admin/permissions` | `manage users` |
 | `/admin/subscribers` | `manage subscribers` |
 | `/admin/audit-logs` | `view audit logs` |
+| `/admin/transactions/*` | `view transaction history` |
 | `/admin/analytics/*` | `view analytics` |
 | `/admin/vault/*`, `/admin/products/{product}/hide` \| `/unhide` | `manage vault` |
 | `/admin/tasks/*`, `/admin/generation-queue` | `proofread products` |
@@ -895,6 +902,56 @@ Every `PUT` replaces wholesale rather than adding — send the complete desired 
   "meta": { "currentPage": 1, "lastPage": 1, "total": 12 }
 }
 ```
+
+### Transaction history (FR-42)
+
+Every payment raised against the platform — subscription signups, renewals and upgrades — with
+the payer and gateway reference, so finance and support can trace a payment end to end.
+Requires the `view transaction history` permission.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin/transactions` | Paginated (30/page), newest first. |
+| GET | `/admin/transactions/{transaction}` | One transaction. `{transaction}` = payment `publicId`. |
+
+**Query filters** (all optional, combinable):
+
+| Param | Matches |
+|---|---|
+| `search` | gateway reference, or the payer's first name / last name / email |
+| `status` | `pending`, `successful`, `failed` |
+| `method` | `mpesa`, `card` |
+| `gateway` | gateway key (e.g. `fake`, `pgw`) |
+| `subscriber` | a user `publicId` — that person's transactions only |
+| `from`, `to` | dates (`YYYY-MM-DD`) |
+
+```json
+{
+  "data": [
+    {
+      "publicId": "2fabe368-…", "amount": "49.99", "currency": "USD",
+      "method": "mpesa", "status": "successful",
+      "gateway": "fake", "gatewayRef": "FAKE-D8PDRWURFQIE",
+      "what": "Subscription",
+      "paidAt": "2026-08-03 11:58:25", "createdAt": "2026-08-03 11:57:51",
+      "payer": { "publicId": "9ae6b8c0-…", "name": "Test Payer", "email": "payer@example.com" },
+      "invoice": { "publicId": "1d73e64a-…", "number": "INV-2026-000001", "issueDate": "2026-08-03" }
+    }
+  ],
+  "links": { "…": "…" },
+  "meta": { "current_page": 1, "last_page": 1, "per_page": 30, "total": 1 }
+}
+```
+
+Notes for the UI:
+
+- **Pending and failed payments are included**, not just settled ones — an unsettled payment is
+  usually the reason someone opens this screen. Filter with `status` if you want only successes.
+- `invoice` is `null` until the payment settles; invoices are only raised on success.
+- `what` says what the money bought: `Subscription` (signup or renewal) or `Tier upgrade`.
+- `paidAt` is `null` for anything not successful. `createdAt` is when the payment was raised, and
+  is what `from`/`to` filter on — bounding on `paidAt` would hide the unsettled rows.
+- The raw gateway callback is **never** returned; it can contain payer PII.
 
 ### LLM providers — Component→LLM assignment map (FR-20, §13.1)
 `GET /admin/llm-providers` — lists the six LLM providers, each with the Components it is permanently

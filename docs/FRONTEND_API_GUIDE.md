@@ -117,6 +117,9 @@ nested inside a product payload.
   Admin-portal access is permission-gated per section — see the table in API_REFERENCE.md §9.
 - Subscribers: `GET /admin/subscribers?search=&status=&tier=`, `GET/PATCH /admin/subscribers/{subscriber}`.
 - Audit log: `GET /admin/audit-logs?description=&from=&to=`.
+- Transaction history: `GET /admin/transactions?search=&status=&method=&gateway=&subscriber=&from=&to=`,
+  `GET /admin/transactions/{transaction}`. Every payment with its payer, gateway reference and
+  invoice. Includes pending and failed ones. Needs the `view transaction history` permission.
 - Analytics: `GET /admin/analytics/summary`, `/subscriptions-by-tier`, `/products-by-component`.
 - Vault (all products incl. hidden): `GET /admin/vault/components`,
   `/vault/components/{component}/products`; `POST /admin/products/{product}/hide` | `/unhide`.

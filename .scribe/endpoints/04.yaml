@@ -142,7 +142,7 @@ endpoints:
         description: ''
         required: false
         example:
-          - 'System Admin'
+          - admin
         type: 'string[]'
         enumValues:
           - admin
@@ -158,7 +158,7 @@ endpoints:
       email: rempel.chadrick@example.org
       password: architecto
       roles:
-        - 'System Admin'
+        - admin
     fileParameters: []
     responses: []
     responseFields: []
@@ -307,7 +307,7 @@ endpoints:
         name: status
         description: ''
         required: false
-        example: active
+        example: pending
         type: string
         enumValues:
           - pending
@@ -322,7 +322,7 @@ endpoints:
         description: ''
         required: false
         example:
-          - 'System Admin'
+          - admin
         type: 'string[]'
         enumValues:
           - admin
@@ -335,9 +335,9 @@ endpoints:
       last_name: 'n'
       phone: g
       country: z
-      status: active
+      status: pending
       roles:
-        - 'System Admin'
+        - admin
     fileParameters: []
     responses: []
     responseFields: []
@@ -1194,7 +1194,7 @@ endpoints:
         name: status
         description: ''
         required: false
-        example: suspended
+        example: active
         type: string
         enumValues:
           - pending
@@ -1208,7 +1208,7 @@ endpoints:
       last_name: 'n'
       phone: g
       country: z
-      status: suspended
+      status: active
     fileParameters: []
     responses: []
     responseFields: []
@@ -1238,6 +1238,112 @@ endpoints:
       Accept: application/json
     urlParameters: []
     cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 401
+        content: '{"message":"Unauthenticated."}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: api/v1/admin/transactions
+    metadata:
+      custom: []
+      groupName: 'Admin Portal'
+      groupDescription: |-
+
+        Transaction history (FR-42): every payment raised against the platform —
+        subscription signups, renewals and upgrades — with the payer and gateway
+        reference, so finance and support can trace a payment end to end.
+
+        Includes pending and failed payments, not just successful ones: a payment that
+        never settled is exactly what someone is looking for when they come asking.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters: []
+    cleanUrlParameters: []
+    queryParameters: []
+    cleanQueryParameters: []
+    bodyParameters: []
+    cleanBodyParameters: []
+    fileParameters: []
+    responses:
+      -
+        custom: []
+        status: 401
+        content: '{"message":"Unauthenticated."}'
+        headers:
+          cache-control: 'no-cache, private'
+          content-type: application/json
+          vary: Origin
+        description: null
+    responseFields: []
+    auth: []
+    controller: null
+    method: null
+    route: null
+  -
+    custom: []
+    httpMethods:
+      - GET
+    uri: 'api/v1/admin/transactions/{public_id}'
+    metadata:
+      custom: []
+      groupName: 'Admin Portal'
+      groupDescription: |-
+
+        Transaction history (FR-42): every payment raised against the platform —
+        subscription signups, renewals and upgrades — with the payer and gateway
+        reference, so finance and support can trace a payment end to end.
+
+        Includes pending and failed payments, not just successful ones: a payment that
+        never settled is exactly what someone is looking for when they come asking.
+      subgroup: ''
+      subgroupDescription: ''
+      title: ''
+      description: ''
+      authenticated: false
+      deprecated: false
+    headers:
+      Content-Type: application/json
+      Accept: application/json
+    urlParameters:
+      public_id:
+        custom: []
+        name: public_id
+        description: 'The ID of the public.'
+        required: true
+        example: architecto
+        type: string
+        enumValues: []
+        exampleWasSpecified: false
+        nullable: false
+        deprecated: false
+    cleanUrlParameters:
+      public_id: architecto
     queryParameters: []
     cleanQueryParameters: []
     bodyParameters: []
@@ -2084,7 +2190,7 @@ endpoints:
         name: frequency
         description: ''
         required: true
-        example: monthly
+        example: daily
         type: string
         enumValues:
           - daily
@@ -2119,7 +2225,7 @@ endpoints:
     cleanBodyParameters:
       title: b
       component: architecto
-      frequency: monthly
+      frequency: daily
       prompt_text: architecto
       qa_prompt_text: architecto
     fileParameters: []

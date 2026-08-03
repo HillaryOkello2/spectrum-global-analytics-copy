@@ -71,6 +71,9 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             Route::apiResource('audit-logs', Admin\AuditLogController::class)
                 ->only('index')->middleware('permission:view audit logs');
 
+            Route::apiResource('transactions', Admin\TransactionController::class)
+                ->only(['index', 'show'])->middleware('permission:view transaction history');
+
             Route::middleware('permission:view analytics')->group(function (): void {
                 Route::get('analytics/summary', Admin\Analytics\AnalyticsSummaryController::class)->name('analytics.summary');
                 Route::get('analytics/subscriptions-by-tier', Admin\Analytics\SubscriptionsByTierController::class)->name('analytics.subscriptions-by-tier');
