@@ -14,6 +14,18 @@ example success and error responses.
 > tier returns its HTML interstitial instead of your JSON (and without CORS headers, so the browser
 > reports it as a CORS failure). E.g. `axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true'`.
 
+> **The deployed backend looks empty in a browser — that's deliberate.**
+> On `https://demo.sga-backend.techbizafrica.com`, everything except `/api/v1/*` returns a bare
+> **404**: the root URL, `/docs`, `/horizon`, `/storage/*`. It is not down and it is not
+> misconfigured — the non-API surface is hidden from the public internet on purpose.
+>
+> - **Your API calls are unaffected.** Same URLs, same payloads, same auth, same CORS.
+>   `https://demo.sga-backend.techbizafrica.com/api/v1/...` works normally.
+> - **`/docs` is not available on the deployed backend.** This file is the complete standalone
+>   reference. For the interactive version, run the backend locally and open `/docs` there.
+> - If a call ever returns `404` with an **empty body**, you hit a path outside `/api/v1/*`.
+>   A genuine API 404 always carries a JSON `{ "message": ... }`.
+
 ---
 
 ## ⚠️ Breaking changes — 2026-08 scope change
