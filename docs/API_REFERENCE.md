@@ -14,17 +14,19 @@ example success and error responses.
 > tier returns its HTML interstitial instead of your JSON (and without CORS headers, so the browser
 > reports it as a CORS failure). E.g. `axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true'`.
 
-> **The deployed backend looks empty in a browser — that's deliberate.**
-> On `https://demo.sga-backend.techbizafrica.com`, everything except `/api/v1/*` returns a bare
-> **404**: the root URL, `/docs`, `/horizon`, `/storage/*`. It is not down and it is not
-> misconfigured — the non-API surface is hidden from the public internet on purpose.
+> **Temporarily wide open (2026-08-04).** While we isolate a connectivity problem, the backend
+> accepts requests from **any origin**, and the API-only lockdown that used to 404 everything
+> outside `/api/v1/*` is switched off — so `/` and `/docs` respond again. Nothing about the API
+> itself changed: same URLs, same payloads, same auth. Both restrictions will come back, so do
+> not build anything that depends on a non-`/api/v1/*` path being reachable.
 >
-> - **Your API calls are unaffected.** Same URLs, same payloads, same auth, same CORS.
->   `https://demo.sga-backend.techbizafrica.com/api/v1/...` works normally.
-> - **`/docs` is not available on the deployed backend.** This file is the complete standalone
->   reference. For the interactive version, run the backend locally and open `/docs` there.
-> - If a call ever returns `404` with an **empty body**, you hit a path outside `/api/v1/*`.
->   A genuine API 404 always carries a JSON `{ "message": ... }`.
+> **If you cannot reach the backend at all**, the cause is most likely *in front of* the
+> application, not in it. The host runs Imunify360 bot protection, which answers flagged IPs
+> with an HTML "One moment, please..." challenge — **carrying HTTP 200 and no CORS headers**.
+> A browser preflight that hits it fails as a CORS error, which looks exactly like the API being
+> down. Tell-tale sign: a response with `server: openresty` or a body containing
+> `Access denied by Imunify360`. That is a server-level setting being sorted out separately —
+> it is not something the frontend or the API can work around.
 
 ---
 

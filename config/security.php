@@ -26,7 +26,19 @@ return [
     |
     */
 
-    'api_only' => (bool) env('API_ONLY', env('APP_ENV') === 'production'),
+    /*
+     * ⚠️ TEMPORARY — LOCKDOWN DISABLED (2026-08-04)
+     *
+     * Turned off while we isolate a connectivity problem between the frontend and
+     * this API, so that /, /docs, /horizon and /storage/* are reachable again and
+     * one variable is removed from the debugging.
+     *
+     * TO RESTORE: change the default back to `env('APP_ENV') === 'production'`.
+     * Nothing else needs to change — the middleware, tests and allow list are all
+     * still in place and still pass. Setting API_ONLY=true in .env re-enables it
+     * immediately without a deploy.
+     */
+    'api_only' => (bool) env('API_ONLY', false),
 
     'api_only_status' => (int) env('API_ONLY_STATUS', 404),
 

@@ -22,32 +22,31 @@ return [
 
     'allowed_methods' => ['*'],
 
+    /*
+     * ⚠️ TEMPORARY — OPEN TO EVERY ORIGIN (2026-08-04)
+     *
+     * Deliberately wide open while we isolate a connectivity problem between the
+     * frontend and this API. TO RESTORE: delete the `?: ['*']` fallback below and
+     * put back the explicit list (demo frontend + localhost dev ports), and
+     * restore the ngrok patterns underneath.
+     *
+     * Setting CORS_ALLOWED_ORIGINS in .env still overrides this, so the deployed
+     * host can be locked back down without a code change.
+     */
     'allowed_origins' => array_values(array_filter(array_map(
         'trim',
         explode(',', (string) env('CORS_ALLOWED_ORIGINS', ''))
-    ))) ?: [
-        // Deployed frontend demo.
-        'https://demo.sga.techbizafrica.com',
+    ))) ?: ['*'],
 
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3001',
-        'http://127.0.0.1:3002',
-        'https://7795-2605-59c1-44fd-f14-197d-8d97-22a3-80d9.ngrok-free.app',
-        'http://192.168.2.108:3000',
-        'http://192.168.2.108:3001',
-        'http://192.168.2.108:3002',
-    ],
-
-    // Regex patterns for origins whose exact URL changes between runs — notably
-    // ngrok free tunnels, which get a new subdomain each restart. Matches any
-    // ngrok origin so CORS keeps working without editing allowed_origins above.
-    'allowed_origins_patterns' => [
-        '#^https://[a-z0-9-]+\.ngrok-free\.app$#',
-        '#^https://[a-z0-9-]+\.ngrok\.app$#',
-    ],
+    /*
+     * A catch-all pattern, not just `allowed_origins = ['*']`.
+     *
+     * `supports_credentials` is true below, and a browser REJECTS the literal
+     * `Access-Control-Allow-Origin: *` on any credentialed request. Matching by
+     * pattern makes the CORS layer echo the caller's actual origin back instead,
+     * which is equally permissive but stays valid with credentials.
+     */
+    'allowed_origins_patterns' => ['#.*#'],
 
     'allowed_headers' => ['*'],
 
