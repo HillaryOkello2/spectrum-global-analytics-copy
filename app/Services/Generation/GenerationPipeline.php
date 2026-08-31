@@ -12,6 +12,7 @@ use App\Models\Topic;
 use App\Models\User;
 use App\Services\Catalog\ProductCodeService;
 use App\Services\Llm\DTOs\LlmResult;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,6 +28,7 @@ class GenerationPipeline
 {
     public function __construct(
         private readonly ProductCodeService $codes,
+        private readonly PromptRenderer $renderer,
     ) {}
 
     /**
@@ -48,38 +50,83 @@ class GenerationPipeline
         return $task;
     }
 
-    public function markGenerating(GenerationTask $task): void
+    /**
+     * Create the empty Product the LLM is about to fill, and move the task to
+     * `generating`.
+     *
+     * The shell exists *before* the model is called because the client's prompts
+     * print the product's code as the document's [DOCUMENT_REF] — so the code
+     * has to be allocated and reserved first, and the prompt is rendered against
+     * it. Allocating without inserting would drop the sequence lock and let two
+     * concurrent jobs claim the same code.
+     */
+    public function beginGeneration(GenerationTask $task): Product
     {
-        $this->transition($task, TaskStatus::Generating, [
-            'started_at' => now(),
-            'attempts' => $task->attempts + 1,
-        ]);
+        return DB::transaction(function () use ($task) {
+            $product = $task->product ?? $this->createProductShell($task);
+
+            // The caller holds this same task instance, and its `product`
+            // relation was resolved as null before the shell existed. Seed it so
+            // storeGeneratedProduct sees the product without a refetch.
+            $task->setRelation('product', $product);
+
+            // A retry re-enters here with the task already `generating`, which is
+            // not a legal transition; count the attempt and carry on rather than
+            // failing the job on its own retry.
+            if ($task->status === TaskStatus::Generating) {
+                $task->update(['product_id' => $product->id, 'attempts' => $task->attempts + 1]);
+
+                return $product;
+            }
+
+            $this->transition($task, TaskStatus::Generating, [
+                'product_id' => $product->id,
+                'started_at' => now(),
+                'attempts' => $task->attempts + 1,
+            ]);
+
+            return $product;
+        });
     }
 
     /**
-     * Persist the LLM output as a draft Product and move to the QA stage (FR-25/26).
+     * Persist the LLM output onto the reserved Product and move to QA (FR-25/26).
      */
     public function storeGeneratedProduct(GenerationTask $task, LlmResult $result): Product
     {
         return DB::transaction(function () use ($task, $result) {
-            $topic = $task->topic;
+            $product = $task->product;
 
-            $product = Product::create([
-                'component_id' => $topic->component_id,
-                'topic_id' => $topic->id,
-                // Allocated under the same transaction as the insert — that is
-                // what makes the sequence lock meaningful.
-                'code' => $this->codes->allocate($topic->component, $topic),
-                'title' => $topic->title,
-                'body' => $result->text,
-                // No abstract: it is written by a proofreader, never generated.
-                'status' => ProductStatus::Draft,
-            ]);
+            $product->update(['body' => $result->text]);
 
-            $this->transition($task, TaskStatus::QaRunning, ['product_id' => $product->id]);
+            $this->transition($task, TaskStatus::QaRunning);
 
             return $product;
         });
+    }
+
+    private function createProductShell(GenerationTask $task): Product
+    {
+        $topic = $task->topic;
+        $variables = $topic->variables ?? [];
+
+        return Product::create([
+            'component_id' => $topic->component_id,
+            'topic_id' => $topic->id,
+            // Allocated under the same transaction as the insert — that is
+            // what makes the sequence lock meaningful.
+            'code' => $this->codes->allocate($topic->component),
+            'title' => str($this->renderer->renderTitle($topic))->limit(250)->value(),
+            // Each prompt names its subtitle slot differently.
+            'byline' => $variables['BYLINE']
+                ?? $variables['DOCUMENT_SUBTITLE']
+                ?? $variables['TARGET_THREAT_MATRIX']
+                ?? null,
+            // Filled by storeGeneratedProduct once the model responds.
+            'body' => '',
+            // No abstract: it is written by a proofreader, never generated.
+            'status' => ProductStatus::Draft,
+        ]);
     }
 
     /**
@@ -110,21 +157,25 @@ class GenerationPipeline
     }
 
     /**
-     * Proofreading stage 1: the corrected abstract and document. The abstract is
-     * authored here — the LLM never writes one — and is what the public sees, so
-     * this step is what makes a product releasable. Hands over to redaction.
+     * Proofreading stage 1: the corrected title, byline, abstract and document.
+     * The abstract is authored here — the LLM never writes one — and is what the
+     * public sees, so this step is what makes a product releasable. Hands over
+     * to redaction.
+     *
+     * @param  array<string, string|null>  $attributes  title, byline, abstract, body
      */
-    public function submitProofread(GenerationTask $task, User $proofreader, string $abstract, string $body): void
+    public function submitProofread(GenerationTask $task, User $proofreader, array $attributes): void
     {
-        DB::transaction(function () use ($task, $proofreader, $abstract, $body): void {
+        DB::transaction(function () use ($task, $proofreader, $attributes): void {
             $this->transition($task, TaskStatus::AwaitingRedaction, [
                 'proofreader_id' => $proofreader->id,
                 'proofread_at' => now(),
             ]);
 
             $task->product->update([
-                'abstract' => $abstract,
-                'body' => $body,
+                // Title and byline are editable here too: the model's metadata
+                // is a first draft like the rest of the document.
+                ...Arr::only($attributes, ['title', 'byline', 'abstract', 'body']),
                 'status' => ProductStatus::AwaitingRedaction,
             ]);
         });

@@ -55,9 +55,12 @@ it('walks a task through proofreading, redaction and approval', function (): voi
     expect($task->refresh()->proofreader_id)->toBe($reviewer->id)
         ->and($task->proofread_at)->not->toBeNull();
 
-    // Stage 1: the abstract is authored here, alongside the corrected document.
+    // Stage 1: the abstract is authored here, alongside the corrected title,
+    // byline and document.
     $this->actingAs($reviewer)
         ->postJson(route('api.admin.tasks.proofread', $task), [
+            'title' => 'The corrected title',
+            'byline' => 'The corrected byline',
             'abstract' => 'A human-written abstract.',
             'body' => 'The corrected document.',
         ])
@@ -66,6 +69,8 @@ it('walks a task through proofreading, redaction and approval', function (): voi
 
     expect($task->refresh()->product->abstract)->toBe('A human-written abstract.')
         ->and($task->product->body)->toBe('The corrected document.')
+        ->and($task->product->title)->toBe('The corrected title')
+        ->and($task->product->byline)->toBe('The corrected byline')
         ->and($task->product->status)->toBe(ProductStatus::AwaitingRedaction);
 
     // Stage 2: the redaction is reviewed separately and approves the product.
@@ -93,7 +98,10 @@ it('requires an abstract when submitting a proofread', function (): void {
     $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task));
 
     $this->actingAs($reviewer)
-        ->postJson(route('api.admin.tasks.proofread', $task), ['body' => 'Only the document.'])
+        ->postJson(route('api.admin.tasks.proofread', $task), [
+            'title' => 'A title',
+            'body' => 'Only the document.',
+        ])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('abstract');
 });

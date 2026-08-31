@@ -30,11 +30,54 @@ example success and error responses.
 
 ---
 
+## ⚠️ Breaking changes — 2026-08-25 (client prompt pack)
+
+**The nine components have new codes.** The placeholder `A1`–`A9` set is replaced by the nine
+product types in the client's finalised prompt pack. This is the second scope change this month;
+the pillar removal below still applies.
+
+| Old | New code | Name |
+|---|---|---|
+| `A4` | **`DB`** | Daily Strategic Intelligence Analytics Brief |
+| `A5` | **`WH`** | Weekly Strategic Intelligence Analytics Highlights |
+| `A6` | **`MF`** | Monthly Strategic Intelligence Analytics Focus |
+| — *(new)* | **`CC`** | Monthly Sovereign Close-Circuit Brief |
+| `A2` | **`ES`** | Analytics Essay Series |
+| `A3` | **`BS`** | Analytics Book Series |
+| `A7` | **`RP`** | Strategic Analytics Research Papers |
+| `A8` + `A9` | **`WP`** | Analytics White Papers *(Corporate and Governmental merged — the client supplies one WP prompt)* |
+| — *(new)* | **`HM`** | High Magnitude Crisis Simulation Project |
+| `A1` | **removed** | Abstract Papers — no prompt in the client pack |
+
+| What changed | Do this instead |
+|---|---|
+| Component codes `A1`–`A9` | Use the codes above. `{component}` still accepts a `publicId` **or** a code (`GET /catalog/components/DB/products`) |
+| **Product code format** — was `SGA.A4.2026-08.017` | Now **`SGA.DB.001.08.26`** — `SGA.{ref}.{seq}.{MM}.{YY}`. This is the client's own `[DOCUMENT_REF]` format, and it is the reference printed *inside* the document. Treat it as an opaque display string |
+| Products gained **`byline`** | A one-line subtitle under the title. May be `null` on older products |
+| `POST /admin/tasks/{task}/proofread` now **requires `title`** and accepts `byline` | Send the (possibly corrected) title back with the abstract and body — see [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
+| `POST /admin/topics` — `prompt_text` and `qa_prompt_text` are now **optional** | Omit them to use the component's client-supplied prompt. Send them only to override |
+
+> **Three components' reference token differs from their catalogue code**: `BS`→`BK`, `CC`→`CB`,
+> `HM`→`CS`. So a Book Series product's code reads `SGA.BK.001.08.26` while its component code is
+> `BS`. That is the client's specification, not a bug — always route on the component `code` (or
+> `publicId`), never by parsing a product code.
+
+### Additions
+
+| New | Where |
+|---|---|
+| **Star ratings** — `GET`/`PUT`/`DELETE /products/{product}/rating` | [Product ratings](#product-ratings) |
+| `averageRating` + `ratingsCount` on product payloads | [Product ratings](#product-ratings) |
+| **Four analytics charts** — subscribers by location, most-read products, product ratings, rejections | [§10 Analytics](#analytics-fr-42) |
+| **Unattended generation** — the daily, weekly and monthly products now commission their own topics | [§12 The content lifecycle](#12-the-content-lifecycle-how-products-appear) |
+
+---
+
 ## ⚠️ Breaking changes — 2026-08 scope change
 
 **Pillars are gone.** The client removed the top level of the catalogue. Components are now
-the entry point, there are **nine** of them (A1–A9, globally unique), and each has its own
-assigned LLM. Everything below is a contract change — re-read this section before your next
+the entry point, there are **nine** of them (globally unique codes — see the 2026-08-25 table
+above for the current set), and each has its own assigned LLM. Everything below is a contract change — re-read this section before your next
 integration pass, then work through the [migration checklist](#frontend-migration-checklist).
 
 | What changed | Do this instead |
@@ -46,9 +89,9 @@ integration pass, then work through the [migration checklist](#frontend-migratio
 | `GET /admin/analytics/products-by-pillar` — **removed** | `GET /admin/analytics/products-by-component` (keys are now `component` + `code`) |
 | No `pillar` object appears on any component, topic or product payload | Read `component` directly |
 | `POST /admin/topics` no longer accepts `pillar` | Send `component` alone |
-| `{component}` accepts a component **code** (`A4`) as well as a `publicId` | — |
+| `{component}` accepts a component **code** (`DB`) as well as a `publicId` | — |
 | Products lost `firstParagraph` | Read **`abstract`** — written by a proofreader, not the LLM |
-| Products gained **`code`** (`SGA.A4.2026-08.017`) | Show it wherever you show a title |
+| Products gained **`code`** (now `SGA.DB.001.08.26`) | Show it wherever you show a title |
 | A third content level: **`redactedBody`** | See [the content ladder](#the-content-ladder) |
 | Task board gained the status **`awaiting_redaction`** and two actions | See [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
 | **Approving no longer publishes.** Approved products go live on a scheduled FIFO release | See [§12](#12-the-content-lifecycle-how-products-appear) |
@@ -126,7 +169,7 @@ prompt, not a hard lock. `meta.reason` is `redacted_access` for this case.
 
 ### 4. Show the product `code` — **small, additive**
 
-Every product payload now carries `code` (`SGA.A4.2026-08.017`). Add it to product cards, the product
+Every product payload now carries `code` (`SGA.DB.001.08.26`). Add it to product cards, the product
 header, and the admin vault/task rows — it is what staff and subscribers will quote to each other.
 
 > Display only. **Do not put it in a URL** — routing still uses `publicId`. It *is* searchable:
@@ -140,7 +183,7 @@ becomes a two-step flow:
 | Task status | What the screen shows | Action |
 |---|---|---|
 | `awaiting_proofreading` | Read-only review | **Open** → `/open` |
-| `in_proofreading` | Editable **abstract** (starts empty) + editable **body** | **Submit proofread** → `/proofread` |
+| `in_proofreading` | Editable **title**, **byline**, **abstract** (starts empty) and **body** | **Submit proofread** → `/proofread` |
 | `awaiting_redaction` | Read-only body + editable **redacted body** | **Submit redaction** → `/redact` |
 | `approved` | Done — waiting for release | none |
 
@@ -192,10 +235,11 @@ subscription / invoices, users / roles / permissions, the audit log, hide/unhide
 envelope shapes, error codes, and `productsCount` semantics (still visible-only in public, everything
 in the vault).
 
-`A10`–`A14` no longer exist. If you hardcoded component codes anywhere — a tier comparison table, an
-icon map, sort order — trim to `A1`–`A9`. Pay-to-own (`A14`) is gone with them, so any
-purchase/pay-to-own UI is currently unreachable; the backend keeps the endpoints wired for when the
-client brings it back.
+The `A`-prefixed codes no longer exist at all. If you hardcoded component codes anywhere — a tier
+comparison table, an icon map, sort order — retarget them to the nine codes in the
+[2026-08-25 table](#-breaking-changes--2026-08-25-client-prompt-pack). Pay-to-own is gone with the
+old `A14`, so any purchase/pay-to-own UI is currently unreachable; the backend keeps the endpoints
+wired for when the client brings it back.
 
 ---
 
@@ -230,26 +274,31 @@ The platform is a subscription intelligence service with three audiences, each b
 **Content hierarchy** is two levels:
 
 ```
-Component  (9 of them, e.g. "Daily Strategic Intelligence Analytics Brief", code A4)
+Component  (9 of them, e.g. "Daily Strategic Intelligence Analytics Brief", code DB)
   └── Product  (the actual articles subscribers read)
 ```
 
-A **Topic** (admin-created) is the instruction that generates Products for a given Component on a
-schedule. Each Component also has its own assigned LLM, which is the model that writes its products.
+A **Topic** is the instruction that generates Products for a given Component on a schedule. Most are
+admin-created; `DB`, `WH` and `MF` commission their own — see
+[Unattended generation](#unattended-generation-the-pulse-products). Each Component has its own
+assigned LLM, its own prompt template supplied by the client, and its own generation queue.
 
 The nine components, in `sortOrder`:
 
-| Code | Name | Batch |
-|---|---|---|
-| `A1` | SGA Analytics Abstract Papers (AP) | 1 |
-| `A2` | SGA Analytics Essay Series (ES) | 1 |
-| `A3` | Analytics Book Series (BS) | 1 |
-| `A4` | Daily Strategic Intelligence Analytics Brief (DB) | 2 |
-| `A5` | Weekly Strategic Intelligence Analytics Highlights (WH) | 2 |
-| `A6` | Monthly Strategic Intelligence Analytics Focus (MF) | 2 |
-| `A7` | Strategic Analytics Research Papers (RP) | 3 |
-| `A8` | Analytics White Papers - Corporate (WP/C) | 3 |
-| `A9` | Analytics White Papers - Governmental (WP/G) | 3 |
+| Code | Name | Ref | Cadence |
+|---|---|---|---|
+| `DB` | Daily Strategic Intelligence Analytics Brief | `DB` | daily, unattended |
+| `WH` | Weekly Strategic Intelligence Analytics Highlights | `WH` | weekly, unattended |
+| `MF` | Monthly Strategic Intelligence Analytics Focus | `MF` | monthly, unattended |
+| `CC` | Monthly Sovereign Close-Circuit Brief | `CB` | admin-triggered |
+| `ES` | Analytics Essay Series | `ES` | admin-triggered |
+| `BS` | Analytics Book Series | `BK` | admin-triggered |
+| `RP` | Strategic Analytics Research Papers | `RP` | admin-triggered |
+| `WP` | Analytics White Papers | `WP` | admin-triggered |
+| `HM` | High Magnitude Crisis Simulation Project | `CS` | admin-triggered |
+
+**Ref** is the token that appears in a product's `code` and in the document's own reference line.
+It differs from the catalogue code for `BS`, `CC` and `HM` — route on the code, never on the ref.
 
 ### The content ladder
 
@@ -269,12 +318,13 @@ quota is still a `403 quota_exhausted`; a denied allocation still returns the ab
 The **`abstract` is written by a proofreader, never by the LLM.** A freshly generated product has a
 `body` but no `abstract`, and cannot be published until one exists.
 
-**Everything is addressed by `publicId`** — an opaque UUID like `9b1f...`. Internal numeric IDs are never exposed. Wherever a URL shows `{component}`, `{product}`, `{invoice}`, etc., you pass the `publicId`. `{component}` additionally accepts the component **code** (`A4`).
+**Everything is addressed by `publicId`** — an opaque UUID like `9b1f...`. Internal numeric IDs are never exposed. Wherever a URL shows `{component}`, `{product}`, `{invoice}`, etc., you pass the `publicId`. `{component}` additionally accepts the component **code** (`DB`).
 
-Separately, every product has a human-readable **`code`**: `SGA.{component}.{period}.{sequence}`,
-e.g. `SGA.A4.2026-08.017`. The period is the month (`2026-08`) for daily/weekly/monthly series and
-the quarter (`2026-Q3`) for quarterly ones; the sequence restarts each period. It is unique and
-safe to display, but it is **not** a URL identifier — use `publicId` for that.
+Separately, every product has a human-readable **`code`**: `SGA.{ref}.{sequence}.{MM}.{YY}`,
+e.g. `SGA.DB.001.08.26`. `{ref}` is the component's reference token, and the sequence restarts each
+month within each component. This is the client's `[DOCUMENT_REF]` format — the same string the
+document prints as its own reference. It is unique and safe to display, but it is **not** a URL
+identifier — use `publicId` for that, and note that a product will **404** if you route on `code`.
 
 ---
 
@@ -517,13 +567,13 @@ Revokes the current token. **Response (`200`):** `{ "message": "Logged out." }`
 No token required. These power the marketing site and gated previews.
 
 ### GET `/catalog/components`
-Lists all 9 Components, in `sortOrder` (A1 → A9). This is the catalogue's entry point.
+Lists all 9 Components, in `sortOrder` (DB first). This is the catalogue's entry point.
 
 **Response (`200`):**
 ```json
 {
   "data": [
-    { "publicId": "…", "name": "SGA Analytics Abstract Papers (AP)", "code": "A1", "batch": 1, "isTransactional": false, "sortOrder": 1, "productsCount": 3 }
+    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "sortOrder": 1, "productsCount": 3 }
   ]
 }
 ```
@@ -535,7 +585,7 @@ Lists all 9 Components, in `sortOrder` (A1 → A9). This is the catalogue's entr
 ---
 
 ### GET `/catalog/components/{component}/products`
-Published, non-hidden products under a component. **Paginated** (20/page). `{component}` = component `publicId` **or** component `code` (e.g. `A4`) — codes are globally unique now, so both work everywhere a `{component}` parameter appears.
+Published, non-hidden products under a component. **Paginated** (20/page). `{component}` = component `publicId` **or** component `code` (e.g. `DB`) — codes are globally unique now, so both work everywhere a `{component}` parameter appears.
 
 **Query:** `search` (optional, matches product title **or** code), `page`.
 
@@ -544,10 +594,10 @@ Published, non-hidden products under a component. **Paginated** (20/page). `{com
 {
   "data": [
     {
-      "publicId": "…", "code": "SGA.A4.2026-08.017", "title": "Red Sea Chokepoint Risk Outlook",
+      "publicId": "…", "code": "SGA.DB.001.08.26", "title": "Red Sea Chokepoint Risk Outlook",
       "excerpt": "The first 160 characters of the abstract…", "publishedAt": "2026-07-15 12:11:57",
       "component": {
-        "publicId": "…", "code": "A4", "name": "Daily Strategic Intelligence Analytics Brief (DB)", "batch": 2, "isTransactional": false, "sortOrder": 4
+        "publicId": "…", "code": "DB", "name": "Daily Strategic Intelligence Analytics Brief", "batch": 1, "isTransactional": false, "sortOrder": 1
       }
     }
   ],
@@ -566,11 +616,11 @@ The gated teaser for any published product (FR-09). `{product}` = product `publi
 ```json
 {
   "data": {
-    "publicId": "…", "code": "SGA.A4.2026-08.017", "title": "Red Sea Chokepoint Risk Outlook",
+    "publicId": "…", "code": "SGA.DB.001.08.26", "title": "Red Sea Chokepoint Risk Outlook",
     "abstract": "The proofreader-written abstract, in full…",
     "locked": true,
     "publishedAt": "2026-07-15 12:11:57",
-    "component": { "publicId": "…", "code": "A4", "name": "…", "batch": 2, "isTransactional": false, "sortOrder": 4 }
+    "component": { "publicId": "…", "code": "DB", "name": "…", "batch": 1, "isTransactional": false, "sortOrder": 1 }
   }
 }
 ```
@@ -588,8 +638,8 @@ Subscription tier cards for the pricing/subscription page, including per-compone
     {
       "publicId": "…", "name": "Freemium", "price": "0.00", "currency": "USD", "billingPeriod": "monthly",
       "allocations": [
-        { "componentCode": "A1", "componentName": "SGA Analytics Abstract Papers (AP)", "accessType": "metered", "monthlyLimit": 10 },
-        { "componentCode": "A4", "componentName": "Daily Strategic Intelligence Analytics Brief (DB)", "accessType": "denied", "monthlyLimit": null }
+        { "componentCode": "DB", "componentName": "Daily Strategic Intelligence Analytics Brief", "accessType": "metered", "monthlyLimit": 10 },
+        { "componentCode": "HM", "componentName": "High Magnitude Crisis Simulation Project", "accessType": "denied", "monthlyLimit": null }
       ]
     }
   ]
@@ -612,8 +662,8 @@ Active subscription card + recent products.
   "data": {
     "subscription": { "publicId": "…", "status": "active", "startsAt": "…", "endsAt": "…", "tier": { "name": "Premium", "…": "…" } },
     "recentProducts": [
-      { "publicId": "…", "code": "SGA.A1.2026-08.003", "title": "…", "excerpt": "…", "publishedAt": "…",
-        "component": { "publicId": "…", "code": "A1", "name": "…", "batch": 1, "isTransactional": false, "sortOrder": 1 } }
+      { "publicId": "…", "code": "SGA.DB.003.08.26", "title": "…", "excerpt": "…", "publishedAt": "…",
+        "component": { "publicId": "…", "code": "DB", "name": "…", "batch": 1, "isTransactional": false, "sortOrder": 1 } }
     ]
   }
 }
@@ -718,9 +768,9 @@ Branch on `locked` and `redacted`, not on which fields happen to be present.
 ```json
 {
   "data": {
-    "publicId": "…", "code": "SGA.A1.2026-08.003", "title": "…",
+    "publicId": "…", "code": "SGA.DB.003.08.26", "title": "…",
     "abstract": "…", "body": "…full article text…",
-    "locked": false, "publishedAt": "…", "component": { "code": "A1", "name": "…" }
+    "locked": false, "publishedAt": "…", "component": { "code": "DB", "name": "…" }
   },
   "meta": { "access": "unlimited" }
 }
@@ -734,9 +784,9 @@ For a **metered** component the `meta` shows usage so you can render "3 of 10 th
 ```json
 {
   "data": {
-    "publicId": "…", "code": "SGA.A6.2026-08.001", "title": "…",
+    "publicId": "…", "code": "SGA.MF.001.08.26", "title": "…",
     "abstract": "…", "redactedBody": "…the separately proofread redacted document…",
-    "locked": true, "redacted": true, "publishedAt": "…", "component": { "code": "A6", "name": "…" }
+    "locked": true, "redacted": true, "publishedAt": "…", "component": { "code": "MF", "name": "…" }
   },
   "meta": { "access": "denied", "reason": "redacted_access" }
 }
@@ -746,7 +796,7 @@ Render the redacted text with an upgrade CTA above it. `body` is **not** present
 **Case C — abstract only (`200`):** denied or no active subscription, and no approved redaction.
 ```json
 {
-  "data": { "publicId": "…", "code": "…", "title": "…", "abstract": "…", "locked": true, "publishedAt": "…", "component": { "code": "A6", "name": "…" } },
+  "data": { "publicId": "…", "code": "…", "title": "…", "abstract": "…", "locked": true, "publishedAt": "…", "component": { "code": "MF", "name": "…" } },
   "meta": { "access": "denied", "reason": "denied" }
 }
 ```
@@ -759,7 +809,7 @@ Render the redacted text with an upgrade CTA above it. `body` is **not** present
 
 **Errors:** `404` if the product isn't published or is hidden.
 
-> **Metering rule:** the limit is **per component per calendar month** — "A1 max 10/month" is 10 A1 products. Components no longer repeat, so there is exactly one A1. Re-reading a product you've already unlocked this month is free (doesn't consume quota again).
+> **Metering rule:** the limit is **per component per calendar month** — "DB max 10/month" is 10 Daily Brief products. Components no longer repeat, so there is exactly one DB. Re-reading a product you've already unlocked this month is free (doesn't consume quota again).
 
 ---
 
@@ -772,13 +822,45 @@ Poll a payment while it settles. `{payment}` = payment `publicId`.
 ```
 Poll until `status` is `successful` (then the user can log in) or `failed` (retry). **Errors:** `404` if it isn't the caller's payment.
 
+### Product ratings
+
+A subscriber's own star rating of one product, 1–5. One rating per subscriber per product —
+re-rating replaces it rather than stacking.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/products/{product}/rating` | The caller's own rating. `data` is `null` if they haven't rated — this is **not** a 404. |
+| PUT | `/products/{product}/rating` | Rate or re-rate. **Body:** `stars` (required, integer 1–5). |
+| DELETE | `/products/{product}/rating` | Withdraw the rating. `204`. |
+
+**Response (`201` first time, `200` on re-rate):**
+```json
+{ "data": { "stars": 4, "ratedAt": "2026-08-25 14:02:11" } }
+```
+
+> **Rating requires read access.** The same entitlement check that gates the document gates the
+> rating: a subscriber whose tier only ever showed them the locked abstract gets **`403`**. Show
+> the star control only when the product came back with `"locked": false`, or when it came back
+> redacted (`"redacted": true`) — both count as read.
+
+**Errors:** `403` if the caller cannot read the product; `422` if `stars` is outside 1–5;
+`401` for an anonymous visitor.
+
+**Aggregates on product payloads.** `averageRating` (rounded to 2dp) and `ratingsCount` appear on
+the catalogue listing, the public preview and the subscriber product view:
+```json
+{ "data": { "publicId": "…", "code": "SGA.DB.001.08.26", "averageRating": 4.5, "ratingsCount": 12 } }
+```
+Both keys are **absent** — not zero — on payloads that didn't request them, so treat a missing key
+as "unknown" and `ratingsCount: 0` as "nobody has rated this yet".
+
 ---
 
 ## 9. Admin Portal endpoints
 
 **All require a staff token.** Prefixed with `/admin`. Access is **permission-based, not role-based**: entry requires the `access admin portal` permission and each section requires its own on top of it — see [Permissions & access control](#permissions--access-control) below. Anything not granted returns `403`.
 
-The built-in `admin` role holds all eight permissions, so an admin reaches everything here. A `System Admin` bypasses every check. Custom roles reach exactly what they were granted.
+The built-in `admin` role holds all nine permissions, so an admin reaches everything here. A `System Admin` bypasses every check. Custom roles reach exactly what they were granted.
 
 ### Permissions & access control
 
@@ -968,8 +1050,8 @@ the Product Generation Master, where the LLM is derived from the chosen componen
       "publicId": "…", "name": "Claude 3.5 Sonnet", "vendor": "Anthropic",
       "modelId": "claude-3-5-sonnet", "isActive": true,
       "components": [
-        { "publicId": "…", "name": "SGA Analytics Abstract Papers (AP)", "code": "A1", "batch": 1, "isTransactional": false, "sortOrder": 1 },
-        { "publicId": "…", "name": "Strategic Analytics Research Papers (RP)", "code": "A7", "batch": 3, "isTransactional": false, "sortOrder": 7 }
+        { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "sortOrder": 1 },
+        { "publicId": "…", "name": "Strategic Analytics Research Papers", "code": "RP", "batch": 3, "isTransactional": false, "sortOrder": 7 }
       ]
     }
   ]
@@ -990,8 +1072,43 @@ reverse — which LLM a component uses — is read by finding the provider whose
   ```
 - `GET /admin/analytics/products-by-component`
   ```json
-  { "data": [ { "component": "Daily Strategic Intelligence Analytics Brief (DB)", "code": "A4", "productsPublished": 14 } ] }
+  { "data": [ { "component": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "productsPublished": 14 } ] }
   ```
+- `GET /admin/analytics/subscribers-by-location` — subscriber count per country, busiest first.
+  ```json
+  { "data": [ { "country": "Kenya", "subscribers": 18 }, { "country": "Nigeria", "subscribers": 7 } ] }
+  ```
+  > `country` is free text captured at registration and is grouped exactly as stored, so
+  > "UK" and "United Kingdom" are two rows. Blank values are bucketed as `"Unknown"`.
+- `GET /admin/analytics/most-read-products?from=&to=&limit=` — ranked by actual reads.
+  ```json
+  { "data": [ { "publicId": "…", "code": "SGA.DB.001.08.26", "title": "…", "component": "DB", "reads": 412 } ] }
+  ```
+  | Query | Rules |
+  |---|---|
+  | `from`, `to` | optional dates; `to` must be on/after `from`. Omit **both** for the all-time ranking |
+  | `limit` | optional, 1–100, default 10 |
+
+  A "read" is a subscriber being served the full or redacted document. A locked preview is
+  **not** a read, and neither is the public preview endpoint. Products with no reads are omitted.
+- `GET /admin/analytics/product-ratings?limit=` — best average first; unrated products omitted.
+  ```json
+  { "data": [ { "publicId": "…", "code": "SGA.RP.003.08.26", "title": "…", "component": "RP", "averageRating": 4.5, "ratingsCount": 12 } ] }
+  ```
+- `GET /admin/analytics/rejections?limit=` — rejected products per component, plus recent notes.
+  ```json
+  {
+    "data": {
+      "byComponent": [ { "component": "Strategic Analytics Research Papers", "code": "RP", "rejected": 2 } ],
+      "recent": [ {
+        "taskPublicId": "…", "productCode": "SGA.RP.003.08.26", "title": "…", "component": "RP",
+        "note": "Descends into tactical reporting in section 3.", "rejectedAt": "2026-08-25 14:02:11"
+      } ]
+    }
+  }
+  ```
+
+All six require the `view analytics` permission.
 
 ### Vault — full content repository (FR-43, §14.11)
 Drill-down that includes hidden and unpublished products (admins see everything).
@@ -1022,7 +1139,7 @@ awaiting_proofreading → in_proofreading → awaiting_redaction → approved �
 | GET | `/admin/tasks` | Board of generation tasks. Paginated. Query: `status` (TaskStatus). **Card view** — each task's product is a short preview only. |
 | GET | `/admin/tasks/{task}` | **Full task detail for review** — the complete product body, the redacted body, the originating topic (with its prompt + QA prompt), and the QA result. Read-only: does **not** change the task status. |
 | POST | `/admin/tasks/{task}/open` | Start proofreading — captures proofreader + timestamp, returns the full detail. → `in_proofreading` |
-| POST | `/admin/tasks/{task}/proofread` | **Stage 1.** Submit the corrected abstract and document. **Body:** `abstract` (required, ≤5000), `body` (required). → `awaiting_redaction` |
+| POST | `/admin/tasks/{task}/proofread` | **Stage 1.** Submit the corrected title, byline, abstract and document. **Body:** `title` (required, ≤255), `byline` (optional, ≤500), `abstract` (required, ≤5000), `body` (required). → `awaiting_redaction` |
 | POST | `/admin/tasks/{task}/redact` | **Stage 2.** Submit the redacted document. **Body:** `redacted_body` (required). Approves the product. → `approved` |
 | POST | `/admin/tasks/{task}/approve` | Approve without a redaction pass. → `approved` |
 | POST | `/admin/tasks/{task}/reject` | Reject. **Body:** `note` (required, ≤2000). Returns the task to the board. |
@@ -1041,8 +1158,8 @@ awaiting_proofreading → in_proofreading → awaiting_redaction → approved �
 ```json
 { "publicId": "…", "status": "awaiting_proofreading", "queuedAt": "…",
   "proofreadAt": null, "redactedAt": null,
-  "topic": { "title": "…", "component": { "code": "A4", "name": "…" } },
-  "product": { "publicId": "…", "code": "SGA.A4.2026-08.017", "title": "…", "abstract": null, "locked": true } }
+  "topic": { "title": "…", "component": { "code": "DB", "name": "…" } },
+  "product": { "publicId": "…", "code": "SGA.DB.001.08.26", "title": "…", "abstract": null, "locked": true } }
 ```
 
 **Full detail (`GET /admin/tasks/{task}`, and the open/approve/reject responses)** — includes the
@@ -1057,13 +1174,13 @@ complete article `body` so the proofreader can review everything:
     "redactor": null, "redactedAt": null,
     "queuedAt": "…", "completedAt": null,
     "llmProvider": { "publicId": "…", "name": "Claude 3.5 Sonnet", "vendor": "Anthropic" },
-    "topic": { "publicId": "…", "title": "…", "frequency": "weekly", "promptText": "…", "qaPromptText": "…", "component": { "code": "A4", "name": "…" } },
+    "topic": { "publicId": "…", "title": "…", "frequency": "weekly", "source": "auto", "variables": { "PRIMARY_TOPIC": "…", "BYLINE": "…" }, "promptText": null, "qaPromptText": null, "component": { "code": "DB", "name": "…" } },
     "product": {
-      "publicId": "…", "code": "SGA.A4.2026-08.017", "title": "…",
+      "publicId": "…", "code": "SGA.DB.001.08.26", "title": "…", "byline": "…",
       "abstract": null, "body": "…the full article text…",
       "redactedBody": null, "redactionApproved": false,
       "status": "in_proofreading", "isHidden": false, "approvedAt": null,
-      "locked": false, "component": { "code": "A4", "name": "…" }
+      "locked": false, "component": { "code": "DB", "name": "…" }
     }
   }
 }
@@ -1131,11 +1248,14 @@ The real gateway (PGW) isn't wired yet; a **fake gateway** runs locally so the w
 Understanding this explains why a product may not be visible yet:
 
 ```
-Admin creates a Topic (for one Component)
-        │  POST /admin/topics/{topic}/queue
+Topic exists, one of two ways:
+  (a) An admin files one           POST /admin/topics  →  /queue
+  (b) The scheduler commissions it  ← DB, WH and MF only; see below
+        │
         ▼
 Generation task: queued → generating → qa_running → awaiting_proofreading
-        │  (the component's assigned LLM writes the body, then a QA pass runs —
+        │  (the component's assigned LLM writes the body against the client's
+        │   prompt template, then the QC vetting protocol runs as a QA pass —
         │   automatic, background. No abstract is produced.)
         ▼
 Admin Task Board (awaiting_proofreading)
@@ -1163,25 +1283,49 @@ Two things commonly explain "why isn't my product showing":
 
 Rejected tasks (`POST …/reject`) go back to the board and the product stays unpublished.
 
+### Unattended generation (the pulse products)
+
+**`DB`, `WH` and `MF` commission their own topics.** Their prompts have a fixed title and only the
+subject changes edition to edition, so a nightly job asks the component's assigned model to pick
+that subject, writes it to a new topic, and queues generation — no admin action at all. `DB` runs
+daily, `WH` weekly, `MF` monthly.
+
+What this means for the frontend:
+
+- Topics on those components appear on their own, with `"source": "auto"`. A hand-filed topic is
+  `"source": "manual"`.
+- An auto topic has `promptText: null` and carries `variables` instead — the values interpolated
+  into the component's prompt template. Don't render `promptText` as "the prompt"; for an auto
+  topic there isn't one to show.
+- They still land on the Task Board and still need a human through both review stages. Nothing is
+  published without a proofreader.
+- The other six components (`CC`, `ES`, `BS`, `RP`, `WP`, `HM`) are unchanged: an admin files the
+  topic. `CC` is monthly in the client's own title and may be switched to unattended later —
+  that's a config change, not an API change.
+
+`prompt_text` and `qa_prompt_text` are now **optional** on `POST /admin/topics`. Omit them and the
+component's client-supplied prompt is used, which is what you almost always want. Send them only
+to override for a one-off.
+
 ---
 
 ## 13. Appendix: subscription tier matrix
 
-Per-component monthly access, seeded from the blueprint's Annex 3 and trimmed to the nine surviving components. `∞` = unlimited, a number = metered monthly limit, `—` = not included (denied).
+Per-component monthly access, seeded from the blueprint's Annex 3 and re-keyed onto the nine components of the client's prompt pack. `∞` = unlimited, a number = metered monthly limit, `—` = not included (denied).
 
 A `—` no longer means the subscriber sees nothing: where the product has an **approved redaction**, they get the redacted document instead of the abstract. See [the content ladder](#the-content-ladder).
 
 | Component | Freemium | Premium | Superior | Platinum |
 |---|---|---|---|---|
-| A1 | 10 | ∞ | ∞ | ∞ |
-| A2 | 3 | ∞ | ∞ | ∞ |
-| A3 | 2 | 5 | ∞ | ∞ |
-| A4 | — | ∞ | ∞ | ∞ |
-| A5 | — | ∞ | ∞ | ∞ |
-| A6 | — | — | ∞ | ∞ |
-| A7 | — | — | ∞ | ∞ |
-| A8 | — | 2 | 10 | ∞ |
-| A9 | — | 2 | 10 | ∞ |
+| DB | 10 | ∞ | ∞ | ∞ |
+| WH | 3 | ∞ | ∞ | ∞ |
+| MF | 2 | ∞ | ∞ | ∞ |
+| CC | — | — | 10 | ∞ |
+| ES | — | ∞ | ∞ | ∞ |
+| BS | — | 5 | ∞ | ∞ |
+| RP | — | 2 | ∞ | ∞ |
+| WP | — | 2 | ∞ | ∞ |
+| HM | — | — | 10 | ∞ |
 
 > Prices are placeholders except Freemium (0) — final pricing is client-supplied. Fetch live values from `GET /tiers`; don't hardcode them.
 

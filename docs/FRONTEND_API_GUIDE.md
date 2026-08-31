@@ -9,6 +9,31 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ⚠️ Breaking: component codes changed (2026-08-25)
+
+The client's finalised prompt pack replaced the placeholder `A1`–`A9` codes with the nine real
+product types. Read the **"Breaking changes — 2026-08-25"** table at the top of `API_REFERENCE.md`
+before your next pass. The short version:
+
+| Old | New | |
+|---|---|---|
+| `A4` `A5` `A6` | `DB` `WH` `MF` | the daily / weekly / monthly pulse products |
+| `A2` `A3` `A7` | `ES` `BS` `RP` | essays, books, research papers |
+| `A8` + `A9` | `WP` | white papers, merged — one client prompt covers both |
+| — | `CC` `HM` | new: Close-Circuit Briefs and Crisis Simulations |
+| `A1` | *removed* | Abstract Papers — no prompt in the client pack |
+
+- **Product codes changed shape**: `SGA.A4.2026-08.017` → **`SGA.DB.001.08.26`**. Display only —
+  routing on it still 404s, as it always has. Use `publicId`.
+- Products gained **`byline`**, a one-line subtitle under the title.
+- **Star ratings**: `GET`/`PUT`/`DELETE /products/{product}/rating`, plus `averageRating` and
+  `ratingsCount` on product payloads. Rating needs read access, not just a preview.
+- **Four new admin charts**: subscribers by location, most-read products, product ratings,
+  rejections.
+- `/proofread` now **requires `title`** and accepts `byline`.
+- `DB`, `WH` and `MF` now **commission their own topics** on a schedule — those topics come back
+  with `"source": "auto"`, `promptText: null` and a `variables` object.
+
 ## ⚠️ Breaking: Pillars are gone (2026-08)
 
 The client removed the catalogue's top level. **Components are now the entry point and there are nine
@@ -17,9 +42,9 @@ integration pass — the short version:
 
 - `/catalog/pillars*`, `/admin/vault/pillars*` and `/admin/analytics/products-by-pillar` are **gone**.
   Use `/catalog/components`, `/admin/vault/components`, `/admin/analytics/products-by-component`.
-- No `pillar` object appears on anything any more. `{component}` accepts a code (`A4`) or a `publicId`.
+- No `pillar` object appears on anything any more. `{component}` accepts a code (`DB`) or a `publicId`.
 - `firstParagraph` → **`abstract`** (written by a proofreader, not the LLM). Products gained a
-  human-readable **`code`** like `SGA.A4.2026-08.017`, and a third content level, **`redactedBody`**.
+  human-readable **`code`** like `SGA.DB.001.08.26`, and a third content level, **`redactedBody`**.
 - Proofreading is two stages (`/proofread` then `/redact`), with a new `awaiting_redaction` status.
 - **Approving no longer publishes** — approved products go live on a scheduled FIFO release.
 
@@ -78,7 +103,10 @@ Browse without logging in (FR-08):
 - `GET /tiers` — subscription tier cards with their per-component allocations (for the pricing page).
 
 > Hierarchy is **Component → Product**. `{product}` in URLs is a `publicId`; `{component}` accepts
-> either a `publicId` or the component `code` (e.g. `A4`) — codes are globally unique now.
+> either a `publicId` or the component `code` (e.g. `DB`) — codes are globally unique now.
+>
+> **A product resolves by `publicId` only.** Routing on the product `code` returns 404 — the code is
+> for display. This is the single most common integration mistake here.
 
 Components carry **`productsCount`** on these listings — how many products sit under them, so you can
 badge the tile before the user opens it. On public/subscriber endpoints it counts published,
@@ -104,6 +132,9 @@ nested inside a product payload.
     without a second call. Metering is **per component per calendar month**; components no longer
     repeat, so there is exactly one A1.
 - `GET /payments/{payment}/status` — poll after initiating a paid action (status: `pending`→`successful`/`failed`).
+- `GET`/`PUT`/`DELETE /products/{product}/rating` — the subscriber's own 1–5 star rating. `PUT` is
+  `403` unless they can actually read the product, so show the star control only when the product
+  came back with `locked: false` or `redacted: true`.
 
 ### Admin Portal (token, role `admin` / `System Admin`)
 - Users: `GET/POST /admin/users`, `GET/PATCH /admin/users/{user}`,
@@ -120,18 +151,23 @@ nested inside a product payload.
 - Transaction history: `GET /admin/transactions?search=&status=&method=&gateway=&subscriber=&from=&to=`,
   `GET /admin/transactions/{transaction}`. Every payment with its payer, gateway reference and
   invoice. Includes pending and failed ones. Needs the `view transaction history` permission.
-- Analytics: `GET /admin/analytics/summary`, `/subscriptions-by-tier`, `/products-by-component`.
+- Analytics: `GET /admin/analytics/summary`, `/subscriptions-by-tier`, `/products-by-component`,
+  `/subscribers-by-location`, `/most-read-products?from=&to=&limit=`, `/product-ratings`,
+  `/rejections`. All behind `view analytics`.
 - Vault (all products incl. hidden): `GET /admin/vault/components`,
   `/vault/components/{component}/products`; `POST /admin/products/{product}/hide` | `/unhide`.
 - Task Board (proofreading), now **two review stages**:
   `GET /admin/tasks?status=`, then per task
-  `POST /admin/tasks/{task}/open` → `/proofread` (`{ abstract, body }`) → `/redact`
+  `POST /admin/tasks/{task}/open` → `/proofread` (`{ title, byline, abstract, body }`) → `/redact`
   (`{ redacted_body }`), or `/reject` (`{ note }`). `/approve` skips the redaction stage.
   Transitions are guarded — an out-of-order call returns 409 `invalid_task_transition`.
   **The abstract is authored at the `/proofread` step** — the LLM never writes one, so a generated
   product has `abstract: null` until then, and cannot be released without it.
 - Product Generation Master: `GET/POST /admin/topics` (create a topic to generate from — `component`
   only, no `pillar`), `POST /admin/topics/{topic}/queue` (kick off generation), `GET /admin/generation-queue`.
+  `prompt_text`/`qa_prompt_text` are now **optional**: omit them and the component's client-supplied
+  prompt is used — send `variables` (the placeholder values) instead. `DB`, `WH` and `MF` create
+  their own topics on a schedule, so expect rows there nobody filed.
 
 > **Approving is not publishing.** An approved product joins a FIFO release queue and goes live on a
 > scheduled job (hourly, oldest approval first, a fixed batch each run). So a product can be

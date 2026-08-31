@@ -13,9 +13,12 @@ return new class extends Migration
             $table->uuid('public_id')->unique();
             $table->foreignId('component_id')->constrained()->cascadeOnDelete();
             $table->foreignId('topic_id')->nullable()->constrained()->nullOnDelete();
-            // Human-readable reference, e.g. SGA.A4.2026-08.017 — see ProductCodeService.
+            // Human-readable reference, e.g. SGA.DB.001.08.26 — see ProductCodeService.
+            // This is the same string the document prints as its [DOCUMENT_REF].
             $table->string('code')->unique();
             $table->string('title');
+            // Every client prompt declares a byline/subtitle; editable at proofreading.
+            $table->string('byline')->nullable();
             // Written by a proofreader, never by the LLM. This is the public
             // preview, so a product cannot be released without one.
             $table->text('abstract')->nullable();
@@ -27,6 +30,9 @@ return new class extends Migration
             $table->boolean('is_hidden')->default(false);
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('published_at')->nullable();
+            // Denormalised counter behind the "most read" chart; the per-read
+            // ledger lives in product_reads.
+            $table->unsignedBigInteger('reads_count')->default(0);
             $table->timestamps();
 
             $table->index(['component_id', 'status', 'is_hidden', 'published_at']);

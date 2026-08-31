@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Http\Resources\Concerns\SummarisesRatings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,14 +14,18 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ProductRedactedResource extends JsonResource
 {
+    use SummarisesRatings;
+
     public function toArray(Request $request): array
     {
         return [
             'publicId' => $this->public_id,
             'code' => $this->code,
             'title' => $this->title,
+            'byline' => $this->byline,
             'abstract' => $this->abstract,
             'redactedBody' => $this->redacted_body,
+            ...$this->ratingSummary(),
             // Locked: this is not the full document. The frontend still shows
             // the upgrade prompt, with readable content behind it.
             'locked' => true,

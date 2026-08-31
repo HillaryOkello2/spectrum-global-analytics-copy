@@ -23,7 +23,11 @@ class FakeLlmClient implements LlmClient
     public function generate(string $prompt): LlmResult
     {
         return new LlmResult(
-            text: $this->isQaPass($prompt) ? $this->qaReport($prompt) : $this->article($prompt),
+            text: match (true) {
+                $this->isQaPass($prompt) => $this->qaReport($prompt),
+                $this->isTopicPass($prompt) => $this->topicVariables($prompt),
+                default => $this->article($prompt),
+            },
             model: $this->modelId,
         );
     }
@@ -35,6 +39,50 @@ class FakeLlmClient implements LlmClient
     private function isQaPass(string $prompt): bool
     {
         return str_contains($prompt, "\n\n---\n\n");
+    }
+
+    /**
+     * A component's topic_prompt asks for a JSON object and shows its schema.
+     * Detecting that here is what lets the unattended daily/weekly path be
+     * exercised end to end with LLM_FAKE=true.
+     */
+    private function isTopicPass(string $prompt): bool
+    {
+        return str_contains($prompt, 'Return ONLY a JSON object');
+    }
+
+    /**
+     * Echo back the exact keys the prompt asked for, with plausible values.
+     * TopicGenerator rejects a reply whose keys don't match, so the stub has to
+     * read the requested schema rather than guess at it.
+     */
+    private function topicVariables(string $prompt): string
+    {
+        preg_match_all('/"([A-Z][A-Z0-9_]*)":/', $prompt, $matches);
+
+        $seed = crc32($prompt);
+        $subject = [
+            'sovereign compute capacity and the fragmentation of semiconductor supply',
+            'maritime chokepoint exposure across the Bab-el-Mandeb and Malacca corridors',
+            'clearinghouse balkanization and the migration of settlement away from dollar rails',
+            'critical mineral mercantilism and state capture of rare earth processing',
+        ][$seed % 4];
+
+        $values = [];
+
+        foreach ($matches[1] as $index => $key) {
+            $values[$key] = match (true) {
+                $key === 'PRIMARY_TOPIC' => "A structural assessment of {$subject}. The analysis traces how the "
+                    .'pressure propagates across adjacent financing, regulatory and logistics channels. It '
+                    .'identifies the indicators that would signal a change of trajectory.',
+                $key === 'PROJECT_FILE' => 'PROJECT '.['MERIDIAN SHOAL', 'GLASS MERIDIAN', 'IRON LATTICE', 'PALE HARBOUR'][$seed % 4],
+                str_starts_with($key, 'CORE_THEME_') => Str::title($subject).' — vector '.($index + 1),
+                str_contains($key, 'TITLE') => Str::title($subject),
+                default => 'Structural exposure and second-order transmission across coupled global systems',
+            };
+        }
+
+        return json_encode($values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     private function article(string $prompt): string

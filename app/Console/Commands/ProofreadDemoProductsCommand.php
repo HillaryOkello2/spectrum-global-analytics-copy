@@ -54,7 +54,14 @@ class ProofreadDemoProductsCommand extends Command
             }
 
             if ($task->status === TaskStatus::InProofreading) {
-                $pipeline->submitProofread($task, $actor, $this->abstract($task), $task->product->body);
+                $pipeline->submitProofread($task, $actor, [
+                    // Title and byline pass through unchanged: a real proofreader
+                    // may correct them, the demo has nothing to correct them to.
+                    'title' => $task->product->title,
+                    'byline' => $task->product->byline,
+                    'abstract' => $this->abstract($task),
+                    'body' => $task->product->body,
+                ]);
                 $task->refresh();
             }
 

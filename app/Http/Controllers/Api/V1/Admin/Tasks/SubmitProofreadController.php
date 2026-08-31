@@ -12,19 +12,15 @@ use App\Services\Generation\GenerationPipeline;
 /**
  * @group Admin Portal
  *
- * Proofreading stage 1: submit the corrected abstract and document. The task
- * then moves to `awaiting_redaction` for the separate redaction pass (§18.4).
+ * Proofreading stage 1: submit the corrected title, byline, abstract and
+ * document. The task then moves to `awaiting_redaction` for the separate
+ * redaction pass (§18.4).
  */
 class SubmitProofreadController extends Controller
 {
     public function __invoke(SubmitProofreadRequest $request, GenerationTask $task, GenerationPipeline $pipeline): GenerationTaskDetailResource
     {
-        $pipeline->submitProofread(
-            $task,
-            $request->user(),
-            $request->validated('abstract'),
-            $request->validated('body'),
-        );
+        $pipeline->submitProofread($task, $request->user(), $request->validated());
 
         return new GenerationTaskDetailResource(
             $task->fresh()->load(GenerationTaskController::DETAIL_RELATIONS),

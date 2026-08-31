@@ -19,8 +19,9 @@ class ProductFactory extends Factory
         return [
             'component_id' => Component::factory(),
             'topic_id' => null,
-            'code' => 'SGA.TEST.'.fake()->date('Y-m').'.'.fake()->unique()->numberBetween(1, 999999),
+            'code' => 'SGA.TEST.'.fake()->unique()->numberBetween(1, 999999).'.'.fake()->date('m.y'),
             'title' => fake()->sentence(8),
+            'byline' => fake()->sentence(10),
             'abstract' => fake()->paragraph(),
             'body' => implode("\n\n", $paragraphs),
             'redacted_body' => null,

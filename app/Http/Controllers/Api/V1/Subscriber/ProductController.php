@@ -10,6 +10,7 @@ use App\Http\Resources\ProductPreviewResource;
 use App\Http\Resources\ProductRedactedResource;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Services\Analytics\ReadTracker;
 use App\Services\Entitlement\EntitlementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,11 +23,15 @@ use Illuminate\Http\Request;
  * proofread redacted document where the tier withholds the full one but a
  * redaction was approved, and otherwise the abstract alone. Metered exhaustion
  * with no redaction available is still a 403.
+ *
+ * A successful read at either content level is recorded by ReadTracker; a
+ * locked preview is not, since nothing was actually read.
  */
 class ProductController extends Controller
 {
     public function __construct(
         private readonly EntitlementService $entitlements,
+        private readonly ReadTracker $reads,
     ) {}
 
     public function show(Request $request, Product $product): JsonResponse
@@ -36,13 +41,17 @@ class ProductController extends Controller
             404,
         );
 
-        $result = $this->entitlements->check($request->user(), $product->load('component'));
+        $product->load('component')->loadCount('ratings')->loadAvg('ratings', 'stars');
+
+        $result = $this->entitlements->check($request->user(), $product);
 
         if ($result->level === EntitlementLevel::MeteredExhausted) {
             throw new QuotaExhaustedException($result->used, $result->limit);
         }
 
         if ($result->grantsFullAccess()) {
+            $this->reads->record($product, $request->user());
+
             return (new ProductResource($product))
                 ->additional(['meta' => $result->meta()])
                 ->response();
@@ -50,6 +59,8 @@ class ProductController extends Controller
 
         // Tier withholds the full document, but an approved redaction exists.
         if ($result->grantsRedactedAccess()) {
+            $this->reads->record($product, $request->user());
+
             return (new ProductRedactedResource($product))
                 ->additional(['meta' => [
                     ...$result->meta(),

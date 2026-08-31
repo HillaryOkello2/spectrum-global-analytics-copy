@@ -91,7 +91,7 @@ class EntitlementService
             ->where('product_id', $product->id)
             ->exists();
 
-        // Quota is per component per calendar month: "A1 max 10/month". With
+        // Quota is per component per calendar month: "DB max 10/month". With
         // Components now global there is exactly one A1, so this is a plain
         // component_id match.
         $usedThisMonth = fn (): int => $user->consumptions()

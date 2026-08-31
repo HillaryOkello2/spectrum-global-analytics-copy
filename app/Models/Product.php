@@ -20,6 +20,7 @@ class Product extends Model
         'topic_id',
         'code',
         'title',
+        'byline',
         'abstract',
         'body',
         'redacted_body',
@@ -38,6 +39,7 @@ class Product extends Model
             'redaction_approved' => 'boolean',
             'approved_at' => 'datetime',
             'published_at' => 'datetime',
+            'reads_count' => 'integer',
         ];
     }
 
@@ -64,6 +66,16 @@ class Product extends Model
     public function purchases(): HasMany
     {
         return $this->hasMany(ProductPurchase::class);
+    }
+
+    public function reads(): HasMany
+    {
+        return $this->hasMany(ProductRead::class);
+    }
+
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(ProductRating::class);
     }
 
     /**

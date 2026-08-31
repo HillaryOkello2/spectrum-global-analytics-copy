@@ -21,6 +21,8 @@ class ProductPreviewController extends Controller
             404,
         );
 
-        return new ProductPreviewResource($product->load('component'));
+        return new ProductPreviewResource(
+            $product->load('component')->loadCount('ratings')->loadAvg('ratings', 'stars'),
+        );
     }
 }

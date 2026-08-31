@@ -68,10 +68,10 @@ it('meters quota, allows free re-reads, and blocks at the limit', function (): v
 });
 
 it('meters each component separately', function (): void {
-    // Components are global, so "A1 max N/month" is one quota — and exhausting
+    // Components are global, so "DB max N/month" is one quota — and exhausting
     // it must not spill over onto A2's separate allowance.
-    $first = Component::factory()->create(['code' => 'A1']);
-    $second = Component::factory()->create(['code' => 'A2']);
+    $first = Component::factory()->create(['code' => 'DB']);
+    $second = Component::factory()->create(['code' => 'WH']);
 
     $firstProduct = Product::factory()->published()->for($first)->create();
     $secondProduct = Product::factory()->published()->for($second)->create();

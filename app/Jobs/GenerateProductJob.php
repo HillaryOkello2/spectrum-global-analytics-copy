@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\GenerationTask;
 use App\Services\Generation\GenerationPipeline;
+use App\Services\Generation\PromptRenderer;
 use App\Services\Llm\LlmManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -26,16 +27,22 @@ class GenerateProductJob implements ShouldQueue
     public function __construct(
         public GenerationTask $task,
     ) {
-        $this->onQueue('llm');
+        // Per-component queue: a 56-page Research Paper must not head-of-line
+        // block the daily brief.
+        $this->onQueue($task->topic->component->queue_name);
     }
 
-    public function handle(GenerationPipeline $pipeline, LlmManager $llm): void
+    public function handle(GenerationPipeline $pipeline, LlmManager $llm, PromptRenderer $renderer): void
     {
         $this->task->refresh();
-        $pipeline->markGenerating($this->task);
 
-        $result = $llm->for($this->task->llmProvider)
-            ->generate($this->task->topic->prompt_text);
+        // Reserves the product code first — the document prints it as its
+        // [DOCUMENT_REF], so the prompt has to be rendered against it.
+        $product = $pipeline->beginGeneration($this->task);
+
+        $prompt = $renderer->renderProductPrompt($this->task->topic, $product->code);
+
+        $result = $llm->for($this->task->llmProvider)->generate($prompt);
 
         $pipeline->storeGeneratedProduct($this->task, $result);
 

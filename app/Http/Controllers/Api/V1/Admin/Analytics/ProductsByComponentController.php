@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1\Admin\Analytics;
 
-use App\Enums\ProductStatus;
 use App\Http\Controllers\Controller;
-use App\Models\Component;
+use App\Services\Analytics\AnalyticsService;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -12,22 +11,8 @@ use Illuminate\Http\JsonResponse;
  */
 class ProductsByComponentController extends Controller
 {
-    public function __invoke(): JsonResponse
+    public function __invoke(AnalyticsService $analytics): JsonResponse
     {
-        $byComponent = Component::query()
-            ->withCount(['products as products_published_count' => fn ($q) => $q->where('status', ProductStatus::Published)])
-            ->orderBy('sort_order')
-            ->get()
-            ->map(fn (Component $component) => [
-                'component' => $component->name,
-                'code' => $component->code,
-                // Deliberately counts published products including vault-hidden
-                // ones: hiding is a subscriber-facing control, not a measure of
-                // editorial output. This will not match the catalogue's
-                // `productsCount`, which is visible-only.
-                'productsPublished' => (int) $component->products_published_count,
-            ]);
-
-        return response()->json(['data' => $byComponent]);
+        return response()->json(['data' => $analytics->productsByComponent()]);
     }
 }

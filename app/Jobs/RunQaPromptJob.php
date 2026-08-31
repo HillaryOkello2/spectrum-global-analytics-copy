@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\GenerationTask;
 use App\Services\Generation\GenerationPipeline;
+use App\Services\Generation\PromptRenderer;
 use App\Services\Llm\LlmManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -26,14 +27,16 @@ class RunQaPromptJob implements ShouldQueue
     public function __construct(
         public GenerationTask $task,
     ) {
-        $this->onQueue('llm');
+        $this->onQueue($task->topic->component->queue_name);
     }
 
-    public function handle(GenerationPipeline $pipeline, LlmManager $llm): void
+    public function handle(GenerationPipeline $pipeline, LlmManager $llm, PromptRenderer $renderer): void
     {
         $this->task->refresh();
 
-        $qaPrompt = $this->task->topic->qa_prompt_text
+        // Defaults to the client's SGA-QCP-v2 vetting protocol, seeded onto
+        // every component; a hand-written topic may still override it.
+        $qaPrompt = $renderer->renderQaPrompt($this->task->topic)
             ."\n\n---\n\n"
             .$this->task->product->body;
 

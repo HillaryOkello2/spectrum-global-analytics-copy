@@ -20,6 +20,8 @@ class ComponentProductController extends Controller
         $products = $component->products()
             ->visible()
             ->with('component')
+            ->withCount('ratings')
+            ->withAvg('ratings', 'stars')
             ->filter($request->only(['search']))
             ->latest('published_at')
             ->paginate(20);

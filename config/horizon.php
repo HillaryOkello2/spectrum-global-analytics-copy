@@ -214,9 +214,20 @@ return [
         // LLM generation jobs: capped concurrency so scheduled bursts don't
         // stampede the six provider APIs (R-05/R-07); generous timeout for
         // long generations.
+        //
+        // One queue per component (components.queue_name), listed in catalogue
+        // order. Horizon works an array of queues in priority order, so the
+        // pulse products drain before the long-form ones and a 56-page Research
+        // Paper cannot head-of-line block the daily brief — while still being a
+        // single supervisor rather than nine. `llm` is kept last as the fallback
+        // for any job queued before a component had its own queue name.
         'supervisor-llm' => [
             'connection' => 'redis',
-            'queue' => ['llm'],
+            'queue' => [
+                'llm-db', 'llm-wh', 'llm-mf', 'llm-cc',
+                'llm-es', 'llm-bs', 'llm-rp', 'llm-wp', 'llm-hm',
+                'llm',
+            ],
             'balance' => 'auto',
             'autoScalingStrategy' => 'size',
             'maxProcesses' => 1,

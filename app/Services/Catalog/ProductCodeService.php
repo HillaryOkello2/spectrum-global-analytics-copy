@@ -2,20 +2,22 @@
 
 namespace App\Services\Catalog;
 
-use App\Enums\Frequency;
 use App\Models\Component;
 use App\Models\Product;
-use App\Models\Topic;
 use Carbon\CarbonInterface;
 
 /**
- * Allocates a product's human-readable code: SGA.{component}.{period}.{seq},
- * e.g. `SGA.A4.2026-08.017`.
+ * Allocates a product's human-readable code: SGA.{ref}.{seq}.{MM}.{YY},
+ * e.g. `SGA.DB.001.08.26`.
  *
- * The period comes from the originating Topic's cadence — quarterly series read
- * better as `2026-Q3` than as a month — and the sequence restarts within each
- * component + period, so a code says at a glance which series a product belongs
- * to and where it sits in that period's run.
+ * The format is the client's, not ours — every prompt in the August pack tells
+ * the model to print this string as the document's [DOCUMENT_REF]. The stored
+ * code and the reference inside the document therefore have to agree, so this
+ * allocates the code first and the generator interpolates it into the prompt.
+ *
+ * `ref` is the component's `ref_code`, which differs from its catalogue `code`
+ * for three components (BS→BK, CC→CB, HM→CS). The sequence restarts each month
+ * within each component.
  */
 class ProductCodeService
 {
@@ -30,33 +32,44 @@ class ProductCodeService
      * it is only held until that transaction commits. The unique index on
      * `products.code` is the backstop if a caller forgets.
      */
-    public function allocate(Component $component, ?Topic $topic = null, ?CarbonInterface $at = null): string
+    public function allocate(Component $component, ?CarbonInterface $at = null): string
     {
-        $prefix = sprintf('%s.%s.%s.', self::PREFIX, $component->code, $this->period($topic, $at ?? now()));
+        $at ??= now();
 
-        return $prefix.str_pad((string) ($this->lastSequence($prefix) + 1), self::SEQUENCE_PADDING, '0', STR_PAD_LEFT);
+        $prefix = sprintf('%s.%s.', self::PREFIX, $component->ref_code);
+        $suffix = '.'.$at->format('m.y');
+
+        $sequence = str_pad(
+            (string) ($this->lastSequence($prefix, $suffix) + 1),
+            self::SEQUENCE_PADDING,
+            '0',
+            STR_PAD_LEFT
+        );
+
+        return $prefix.$sequence.$suffix;
     }
 
     /**
-     * Highest sequence already issued under this prefix. Ordering by length then
-     * value keeps 100 above 99 once a period runs past the padding width.
+     * Highest sequence already issued for this component in this month.
+     *
+     * The sequence sits in the middle of the code rather than at the end, but
+     * the suffix is a constant here, so ordering by length then value still
+     * sorts by sequence — length first keeps 1000 above 999 once a month runs
+     * past the padding width.
      */
-    private function lastSequence(string $prefix): int
+    private function lastSequence(string $prefix, string $suffix): int
     {
         $latest = Product::query()
-            ->where('code', 'like', $prefix.'%')
+            ->where('code', 'like', $prefix.'%'.$suffix)
             ->orderByRaw('LENGTH(code) DESC')
             ->orderBy('code', 'desc')
             ->lockForUpdate()
             ->value('code');
 
-        return $latest === null ? 0 : (int) substr($latest, strlen($prefix));
-    }
+        if ($latest === null) {
+            return 0;
+        }
 
-    private function period(?Topic $topic, CarbonInterface $at): string
-    {
-        return $topic?->frequency === Frequency::Quarterly
-            ? $at->format('Y').'-Q'.$at->quarter
-            : $at->format('Y-m');
+        return (int) substr($latest, strlen($prefix), -strlen($suffix));
     }
 }

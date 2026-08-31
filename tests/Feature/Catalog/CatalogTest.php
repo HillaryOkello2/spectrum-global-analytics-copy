@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\Frequency;
 use App\Models\Component;
 use App\Models\Product;
+use App\Models\User;
 
 it('lists components for the public catalogue', function (): void {
     Component::factory()->count(3)->create();
@@ -12,14 +14,14 @@ it('lists components for the public catalogue', function (): void {
 });
 
 it('resolves a component by public id or by its unique code', function (): void {
-    $component = Component::factory()->create(['code' => 'A4']);
+    $component = Component::factory()->create(['code' => 'DB']);
     Product::factory()->published()->count(2)->for($component)->create();
 
     $this->getJson(route('api.catalog.components.products.index', $component->public_id))
         ->assertOk()
         ->assertJsonCount(2, 'data');
 
-    $this->getJson(route('api.catalog.components.products.index', 'A4'))
+    $this->getJson(route('api.catalog.components.products.index', 'DB'))
         ->assertOk()
         ->assertJsonCount(2, 'data');
 
@@ -82,14 +84,14 @@ it('omits the product count from components embedded in product payloads', funct
 
 it('exposes the product code and abstract but never the body on a preview', function (): void {
     $product = Product::factory()->published()->create([
-        'code' => 'SGA.A4.2026-08.017',
+        'code' => 'SGA.DB.017.08.26',
         'abstract' => 'The abstract a visitor is allowed to read.',
         'body' => 'CONFIDENTIAL FULL DOCUMENT',
     ]);
 
     $this->getJson(route('api.products.preview', $product))
         ->assertOk()
-        ->assertJsonPath('data.code', 'SGA.A4.2026-08.017')
+        ->assertJsonPath('data.code', 'SGA.DB.017.08.26')
         ->assertJsonPath('data.abstract', 'The abstract a visitor is allowed to read.')
         ->assertJsonPath('data.locked', true)
         ->assertJsonMissingPath('data.body')
@@ -107,4 +109,35 @@ it('excerpts the abstract, not the body, on catalogue listings', function (): vo
         ->assertOk()
         ->assertJsonPath('data.0.excerpt', 'Abstract text.')
         ->assertJsonMissingPath('data.0.body');
+});
+
+it('hides generation metadata from the public catalogue', function (): void {
+    Component::factory()->create(['code' => 'DB', 'variables' => ['PRIMARY_TOPIC']]);
+
+    $this->getJson(route('api.catalog.components.index'))
+        ->assertOk()
+        ->assertJsonMissingPath('data.0.variables')
+        ->assertJsonMissingPath('data.0.refCode')
+        ->assertJsonMissingPath('data.0.generationFrequency');
+});
+
+it('exposes generation metadata to an admin who manages topics', function (): void {
+    Component::factory()->create([
+        'code' => 'DB',
+        'ref_code' => 'DB',
+        'variables' => ['PRIMARY_TOPIC', 'BYLINE'],
+        'generation_frequency' => Frequency::Daily,
+    ]);
+
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    // The admin vault serves the same resource; the topic form reads `variables`
+    // from here to know which placeholders to collect.
+    $this->actingAs($admin)
+        ->getJson(route('api.admin.vault.components.index'))
+        ->assertOk()
+        ->assertJsonPath('data.0.refCode', 'DB')
+        ->assertJsonPath('data.0.variables', ['PRIMARY_TOPIC', 'BYLINE'])
+        ->assertJsonPath('data.0.generationFrequency', 'daily');
 });

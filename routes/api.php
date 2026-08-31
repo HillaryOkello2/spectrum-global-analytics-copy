@@ -45,6 +45,11 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             Route::apiResource('me/invoices', Subscriber\InvoiceController::class)
                 ->only(['index', 'show'])->names('me.invoices');
             Route::apiResource('products', Subscriber\ProductController::class)->only('show');
+            // Singletons are not destroyable by default; a subscriber may
+            // withdraw a rating they left.
+            Route::apiSingleton('products.rating', Subscriber\ProductRatingController::class)
+                ->destroyable()
+                ->only(['show', 'update', 'destroy']);
             Route::get('payments/{payment}/status', Subscriber\PaymentStatusController::class)->name('payments.status');
         });
 
@@ -78,6 +83,10 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                 Route::get('analytics/summary', Admin\Analytics\AnalyticsSummaryController::class)->name('analytics.summary');
                 Route::get('analytics/subscriptions-by-tier', Admin\Analytics\SubscriptionsByTierController::class)->name('analytics.subscriptions-by-tier');
                 Route::get('analytics/products-by-component', Admin\Analytics\ProductsByComponentController::class)->name('analytics.products-by-component');
+                Route::get('analytics/subscribers-by-location', Admin\Analytics\SubscribersByLocationController::class)->name('analytics.subscribers-by-location');
+                Route::get('analytics/most-read-products', Admin\Analytics\MostReadProductsController::class)->name('analytics.most-read-products');
+                Route::get('analytics/product-ratings', Admin\Analytics\ProductRatingsController::class)->name('analytics.product-ratings');
+                Route::get('analytics/rejections', Admin\Analytics\RejectionsController::class)->name('analytics.rejections');
             });
 
             Route::middleware('permission:manage vault')->group(function (): void {

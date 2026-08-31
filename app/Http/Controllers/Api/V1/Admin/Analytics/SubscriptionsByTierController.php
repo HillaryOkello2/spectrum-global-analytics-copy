@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1\Admin\Analytics;
 
-use App\Enums\SubscriptionStatus;
 use App\Http\Controllers\Controller;
-use App\Models\SubscriptionTier;
+use App\Services\Analytics\AnalyticsService;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -12,17 +11,8 @@ use Illuminate\Http\JsonResponse;
  */
 class SubscriptionsByTierController extends Controller
 {
-    public function __invoke(): JsonResponse
+    public function __invoke(AnalyticsService $analytics): JsonResponse
     {
-        $byTier = SubscriptionTier::query()
-            ->withCount(['subscriptions as active_count' => fn ($q) => $q->where('status', SubscriptionStatus::Active)])
-            ->orderBy('sort_order')
-            ->get()
-            ->map(fn (SubscriptionTier $tier) => [
-                'tier' => $tier->name,
-                'activeSubscriptions' => $tier->active_count,
-            ]);
-
-        return response()->json(['data' => $byTier]);
+        return response()->json(['data' => $analytics->subscriptionsByTier()]);
     }
 }
