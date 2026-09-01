@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\Component;
+use App\Models\GenerationTask;
 use App\Models\LlmProvider;
+use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
 use App\Services\Generation\TopicGenerator;
 use App\Services\Llm\LlmManager;
@@ -22,13 +24,17 @@ use Throwable;
  *   php artisan llm:test anthropic       one provider
  *   php artisan llm:test --topic         also commission a live topic   (~10s)
  *   php artisan llm:test --document      full document + QA report      (~3m)
+ *   php artisan llm:test --persist       the real pipeline, saved to the DB (~3m)
  *
  * --document writes both files to storage/app/llm-test so you can read the
  * document the client's prompt actually produces, and what the SGA-QCP-v2
- * vetting protocol says about it, without going through the Task Board.
+ * vetting protocol says about it, without going through the Task Board. It
+ * keeps nothing: the commissioned topic is deleted again on the way out.
  *
- * Nothing is kept: the commissioned topic is deleted again on the way out, so
- * the command is safe to run against a seeded database as often as you like.
+ * --persist is the opposite — it runs the genuine queue path (GenerateProductJob
+ * then RunQaPromptJob, transitions and all) inline instead of on a worker, and
+ * leaves the topic, generation_task and product rows behind for inspection. It
+ * is the same code the scheduler runs at 00:05; only the worker is skipped.
  */
 class TestLlmCommand extends Command
 {
@@ -36,11 +42,12 @@ class TestLlmCommand extends Command
         {driver? : Limit to one driver (anthropic, gemini, openai, deepseek, moonshot, minimax)}
         {--topic : Also commission a real topic for a component on that provider}
         {--document : Also generate a full document and run the QA prompt over it — slow, and it costs tokens}
-        {--out= : Directory to write the document and QA report to (default storage/app/llm-test)}';
+        {--out= : Directory to write the document and QA report to (default storage/app/llm-test)}
+        {--persist : Run the real pipeline and KEEP the topic, task and product rows in the database}';
 
     protected $description = 'Send a live prompt to each configured LLM provider and report what came back';
 
-    public function handle(LlmManager $llm, TopicGenerator $topics, PromptRenderer $renderer): int
+    public function handle(LlmManager $llm, TopicGenerator $topics, PromptRenderer $renderer, GenerationPipeline $pipeline): int
     {
         if (config('llm.fake')) {
             $this->warn('LLM_FAKE is on — every provider resolves to the fake driver. Set LLM_FAKE=false to test for real.');
@@ -65,7 +72,10 @@ class TestLlmCommand extends Command
             $failed += $this->check($provider, $llm) ? 0 : 1;
         }
 
-        if ($this->option('topic') || $this->option('document')) {
+        if ($this->option('persist')) {
+            $this->newLine();
+            $this->persistRun($providers, $topics, $pipeline);
+        } elseif ($this->option('topic') || $this->option('document')) {
             $this->newLine();
             $this->deepCheck($providers, $llm, $topics, $renderer);
         }
@@ -104,13 +114,105 @@ class TestLlmCommand extends Command
     }
 
     /**
+     * The genuine pipeline, start to finish, written to the database.
+     *
      * @param  Collection<int, LlmProvider>  $providers
      */
-    private function deepCheck($providers, LlmManager $llm, TopicGenerator $topics, PromptRenderer $renderer): void
+    private function persistRun(Collection $providers, TopicGenerator $topics, GenerationPipeline $pipeline): void
     {
-        // Only providers that actually have a key — otherwise the deep check
-        // lands on whichever component sorts first and fails for the boring
-        // reason the summary above already reported.
+        $component = $this->componentFor($providers);
+
+        if ($component === null) {
+            return;
+        }
+
+        $this->info("Live run on {$component->code} via {$component->assignedLlmProvider->model_id} — rows WILL be kept");
+
+        $started = microtime(true);
+
+        try {
+            $topic = $topics->generate($component);
+        } catch (Throwable $e) {
+            $this->line('  <fg=red>topic FAILED</> '.$this->oneLine($e->getMessage()));
+
+            return;
+        }
+
+        $this->line(sprintf('  <info>topic #%d</info> %.1fs — %s', $topic->id, microtime(true) - $started, $this->oneLine($topic->title, 70)));
+
+        // queueTopic dispatches GenerateProductJob, which chains RunQaPromptJob.
+        // Forcing the sync connection runs that real chain inline, so no worker
+        // is needed and the command cannot exit before the rows are written.
+        config(['queue.default' => 'sync']);
+
+        $started = microtime(true);
+
+        try {
+            $task = $pipeline->queueTopic($topic);
+        } catch (Throwable $e) {
+            $this->line('  <fg=red>pipeline FAILED</> '.$this->oneLine($e->getMessage()));
+            $this->failureRows($topic->id);
+
+            return;
+        }
+
+        $this->line(sprintf('  <info>pipeline</info> %.1fs', microtime(true) - $started));
+        $this->newLine();
+
+        $this->rows($task->refresh()->load(['product', 'topic']));
+    }
+
+    private function rows(GenerationTask $task): void
+    {
+        $product = $task->product;
+
+        $this->line('<comment>Rows written:</comment>');
+        $this->table(
+            ['table', 'id', 'key', 'status'],
+            [
+                ['topics', $task->topic_id, $this->oneLine($task->topic->title, 46), $task->topic->source],
+                ['generation_tasks', $task->id, $task->public_id, $task->status->value],
+                ['products', $product?->id ?? '-', $product?->code ?? '-', $product?->status->value ?? '-'],
+            ],
+        );
+
+        if ($product === null) {
+            return;
+        }
+
+        $this->line('  products.body      '.strlen((string) $product->body).' chars, '.str_word_count((string) $product->body).' words');
+        $this->line('  products.abstract  '.($product->abstract === null ? '<comment>null - written by the proofreader, never the LLM</comment>' : strlen($product->abstract).' chars'));
+        $this->line('  tasks.qa_result    '.strlen((string) $task->qa_result).' chars');
+        $this->newLine();
+
+        $this->line('<comment>See it in the database:</comment>');
+        $this->line("  mysql> SELECT id, code, title, status, CHAR_LENGTH(body) FROM products WHERE id = {$product->id};");
+        $this->newLine();
+        $this->line("On the Task Board as <info>{$task->status->value}</info> - GET /api/v1/admin/tasks/{$task->public_id}");
+    }
+
+    /**
+     * A failed run still leaves rows behind - say which, so they can be found.
+     */
+    private function failureRows(int $topicId): void
+    {
+        $task = GenerationTask::where('topic_id', $topicId)->latest('id')->first();
+
+        if ($task === null) {
+            return;
+        }
+
+        $this->line("  task #{$task->id} is <fg=red>{$task->status->value}</> - ".$this->oneLine((string) $task->last_error));
+    }
+
+    /**
+     * @param  Collection<int, LlmProvider>  $providers
+     */
+    private function componentFor(Collection $providers): ?Component
+    {
+        // Only providers that actually have a key - otherwise this lands on
+        // whichever component sorts first and fails for the boring reason the
+        // summary above already reported.
         $usable = $providers->filter(fn (LlmProvider $p) => filled(config("llm.drivers.{$p->driver}.api_key")));
 
         $component = Component::query()
@@ -120,8 +222,20 @@ class TestLlmCommand extends Command
             ->first();
 
         if ($component === null) {
-            $this->warn('No component with a topic prompt is assigned to those providers — skipping.');
+            $this->warn('No component with a topic prompt is assigned to a provider that has an API key - skipping.');
+        }
 
+        return $component;
+    }
+
+    /**
+     * @param  Collection<int, LlmProvider>  $providers
+     */
+    private function deepCheck(Collection $providers, LlmManager $llm, TopicGenerator $topics, PromptRenderer $renderer): void
+    {
+        $component = $this->componentFor($providers);
+
+        if ($component === null) {
             return;
         }
 
