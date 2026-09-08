@@ -30,7 +30,7 @@ before your next pass. The short version:
   `ratingsCount` on product payloads. Rating needs read access, not just a preview.
 - **Four new admin charts**: subscribers by location, most-read products, product ratings,
   rejections.
-- `/proofread` now **requires `title`** and accepts `byline`.
+- `/proofread` takes **`body` only**. The abstract is derived from it server-side; title and byline are already set.
 - `DB`, `WH` and `MF` now **commission their own topics** on a schedule — those topics come back
   with `"source": "auto"`, `promptText: null` and a `variables` object.
 
@@ -43,7 +43,7 @@ integration pass — the short version:
 - `/catalog/pillars*`, `/admin/vault/pillars*` and `/admin/analytics/products-by-pillar` are **gone**.
   Use `/catalog/components`, `/admin/vault/components`, `/admin/analytics/products-by-component`.
 - No `pillar` object appears on anything any more. `{component}` accepts a code (`DB`) or a `publicId`.
-- `firstParagraph` → **`abstract`** (written by a proofreader, not the LLM). Products gained a
+- `firstParagraph` → **`abstract`** (derived from the document at `/proofread`). Products gained a
   human-readable **`code`** like `SGA.DB.001.08.26`, and a third content level, **`redactedBody`**.
 - Proofreading is two stages (`/proofread` then `/redact`), with a new `awaiting_redaction` status.
 - **Approving no longer publishes** — approved products go live on a scheduled FIFO release.
@@ -158,10 +158,10 @@ nested inside a product payload.
   `/vault/components/{component}/products`; `POST /admin/products/{product}/hide` | `/unhide`.
 - Task Board (proofreading), now **two review stages**:
   `GET /admin/tasks?status=`, then per task
-  `POST /admin/tasks/{task}/open` → `/proofread` (`{ title, byline, abstract, body }`) → `/redact`
+  `POST /admin/tasks/{task}/open` → `/proofread` (`{ body }`) → `/redact`
   (`{ redacted_body }`), or `/reject` (`{ note }`). `/approve` skips the redaction stage.
   Transitions are guarded — an out-of-order call returns 409 `invalid_task_transition`.
-  **The abstract is authored at the `/proofread` step** — the LLM never writes one, so a generated
+  **The abstract is derived at the `/proofread` step** from the body's own Executive Summary, so a generated
   product has `abstract: null` until then, and cannot be released without it.
 - Product Generation Master: `GET/POST /admin/topics` (create a topic to generate from — `component`
   only, no `pillar`), `POST /admin/topics/{topic}/queue` (kick off generation), `GET /admin/generation-queue`.

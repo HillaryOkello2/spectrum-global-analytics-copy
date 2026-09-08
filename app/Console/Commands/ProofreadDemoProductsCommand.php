@@ -54,12 +54,9 @@ class ProofreadDemoProductsCommand extends Command
             }
 
             if ($task->status === TaskStatus::InProofreading) {
+                // The body unchanged — the demo has nothing to correct. The
+                // abstract is derived from it by the pipeline.
                 $pipeline->submitProofread($task, $actor, [
-                    // Title and byline pass through unchanged: a real proofreader
-                    // may correct them, the demo has nothing to correct them to.
-                    'title' => $task->product->title,
-                    'byline' => $task->product->byline,
-                    'abstract' => $this->abstract($task),
                     'body' => $task->product->body,
                 ]);
                 $task->refresh();
@@ -78,13 +75,6 @@ class ProofreadDemoProductsCommand extends Command
         $this->comment('They are not live yet — run: php artisan products:release');
 
         return self::SUCCESS;
-    }
-
-    private function abstract(GenerationTask $task): string
-    {
-        return "Placeholder abstract for \"{$task->product->title}\" ({$task->product->component->name}). "
-            .'This stands in for the proofreader-written abstract during local development and is not real analysis. '
-            .'It is what visitors and non-entitled subscribers see in place of the full document.';
     }
 
     private function redaction(GenerationTask $task): string

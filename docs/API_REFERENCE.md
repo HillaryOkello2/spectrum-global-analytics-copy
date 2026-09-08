@@ -54,7 +54,7 @@ the pillar removal below still applies.
 | Component codes `A1`–`A9` | Use the codes above. `{component}` still accepts a `publicId` **or** a code (`GET /catalog/components/DB/products`) |
 | **Product code format** — was `SGA.A4.2026-08.017` | Now **`SGA.DB.001.08.26`** — `SGA.{ref}.{seq}.{MM}.{YY}`. This is the client's own `[DOCUMENT_REF]` format, and it is the reference printed *inside* the document. Treat it as an opaque display string |
 | Products gained **`byline`** | A one-line subtitle under the title. May be `null` on older products |
-| `POST /admin/tasks/{task}/proofread` now **requires `title`** and accepts `byline` | Send the (possibly corrected) title back with the abstract and body — see [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
+| `POST /admin/tasks/{task}/proofread` takes **`body` only** | Title and byline are set when the product is created; the **abstract is derived from the body** by the server. Sending anything else is ignored — see [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
 | `POST /admin/topics` — `prompt_text` and `qa_prompt_text` are now **optional** | Omit them to use the component's client-supplied prompt. Send them only to override |
 
 > **Three components' reference token differs from their catalogue code**: `BS`→`BK`, `CC`→`CB`,
@@ -90,7 +90,7 @@ integration pass, then work through the [migration checklist](#frontend-migratio
 | No `pillar` object appears on any component, topic or product payload | Read `component` directly |
 | `POST /admin/topics` no longer accepts `pillar` | Send `component` alone |
 | `{component}` accepts a component **code** (`DB`) as well as a `publicId` | — |
-| Products lost `firstParagraph` | Read **`abstract`** — written by a proofreader, not the LLM |
+| Products lost `firstParagraph` | Read **`abstract`** — derived server-side from the document's own Executive Summary at the `/proofread` step |
 | Products gained **`code`** (now `SGA.DB.001.08.26`) | Show it wherever you show a title |
 | A third content level: **`redactedBody`** | See [the content ladder](#the-content-ladder) |
 | Task board gained the status **`awaiting_redaction`** and two actions | See [Task Board](#task-board--proofreading-workflow-fr-4445-184) |
@@ -148,9 +148,10 @@ empty.
 + <p>{product.abstract}</p>
 ```
 
-Note `abstract` **can be `null`** on an unpublished product (it is written during proofreading, not
-generated). Public and subscriber endpoints only ever return published products, so it is reliably
-present there — but the **admin task board will show `null`**, and that is correct, not a bug.
+Note `abstract` **can be `null`** on an unpublished product — it is filled at the `/proofread` step,
+derived from the document's own Executive Summary. Public and subscriber endpoints only ever return
+published products, so it is reliably present there, but the **admin task board will show `null`**
+before proofreading, and that is correct, not a bug.
 
 ### 3. Handle the third content level on `GET /products/{product}` — **medium, new feature**
 
@@ -183,13 +184,13 @@ becomes a two-step flow:
 | Task status | What the screen shows | Action |
 |---|---|---|
 | `awaiting_proofreading` | Read-only review | **Open** → `/open` |
-| `in_proofreading` | Editable **title**, **byline**, **abstract** (starts empty) and **body** | **Submit proofread** → `/proofread` |
+| `in_proofreading` | Editable **body** — that is the whole form | **Submit proofread** → `/proofread` (`{ body }`) |
 | `awaiting_redaction` | Read-only body + editable **redacted body** | **Submit redaction** → `/redact` |
 | `approved` | Done — waiting for release | none |
 
 - Add a **`awaiting_redaction` column/filter** to the board, or it will look like tasks vanish
   mid-workflow. **silent**
-- The abstract editor must start **empty** and be clearly labelled as the public-facing summary. Do
+- There is **no abstract editor**: the server lifts the public summary out of the submitted body. Do
   not prefill it from the body — that would publish the opening of the article as the teaser.
 - Both new endpoints validate: `abstract` (required, ≤5000) + `body` (required), and `redacted_body`
   (required). Out-of-order calls return `409 invalid_task_transition` — same handling you already have.
