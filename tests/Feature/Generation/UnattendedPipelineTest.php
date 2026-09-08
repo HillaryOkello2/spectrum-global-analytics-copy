@@ -46,12 +46,16 @@ it('takes the daily brief from scheduler tick to published catalogue entry', fun
     // Proofread, redact, release.
     $reviewer = admin();
     $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task))->assertOk();
+    // The proofreader submits the document alone: the title came from the
+    // component's title_template when the shell was created, and the abstract
+    // is lifted from the body.
+    $title = $product->title;
+
     $this->actingAs($reviewer)->postJson(route('api.admin.tasks.proofread', $task), [
-        'title' => 'Daily Brief — Sovereign Compute',
-        'byline' => 'Structural exposure across coupled systems',
-        'abstract' => 'The proofreader-written abstract.',
         'body' => $product->body,
     ])->assertOk();
+
+    expect($product->refresh()->abstract)->not->toBeNull();
     $this->actingAs($reviewer)->postJson(route('api.admin.tasks.redact', $task), [
         'redacted_body' => 'The redacted document.',
     ])->assertOk();
@@ -68,7 +72,7 @@ it('takes the daily brief from scheduler tick to published catalogue entry', fun
     $this->getJson(route('api.catalog.components.products.index', 'DB'))
         ->assertOk()
         ->assertJsonPath('data.0.code', 'SGA.DB.001.08.26')
-        ->assertJsonPath('data.0.title', 'Daily Brief — Sovereign Compute');
+        ->assertJsonPath('data.0.title', $title);
 });
 
 it('renders the client prompt with no placeholder left behind', function (): void {

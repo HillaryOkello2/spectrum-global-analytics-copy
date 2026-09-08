@@ -128,12 +128,29 @@ class ComponentSeeder extends Seeder
     public function run(): void
     {
         $providerIds = LlmProvider::orderBy('id')->pluck('id')->all();
+
+        // QC.txt is the client's SGA-QCP-v2, edited (2026-09-07/08) so that it
+        // audits the document the generation prompts actually specify. As
+        // supplied it was calibrated to a different schema and failed every
+        // draft on four points none of the nine product prompts ask for:
+        //
+        //   - the `SGA.P1`-`SGA.P12` pillar taxonomy (Section 6, and the vector
+        //     codes in 2.1/4.2) — the prompts specify First/Second/Third Order
+        //   - a "Tiers 3.5.1-3.5.6" client list on the cover — 3.5.x appears in
+        //     no product prompt
+        //   - core sections "Themes/Phases I-IV" and subsections x.1 to x.5 —
+        //     the prompts specify ten named sections of exactly x.1 to x.3
+        //   - six subscriber-tier advisories in Section 7 — the prompts specify
+        //     three: Primary, Secondary, Third Tier ("third tier" being the
+        //     third order of consequence, not subscriber tier three)
+        //
+        // Everything else, including the whole verdict mechanism, is verbatim.
         $qaPrompt = self::promptFile('QC');
 
         foreach (self::COMPONENTS as $index => $component) {
             Component::updateOrCreate(['code' => $component['code']], [
                 ...$component,
-                'prompt_template' => self::promptFile($component['code']),
+                'prompt_template' => self::productPrompt($component),
                 'topic_prompt' => self::topicPrompt($component),
                 'qa_prompt_template' => $qaPrompt,
                 'assigned_llm_provider_id' => $providerIds === [] ? null : $providerIds[$index % count($providerIds)],
@@ -151,6 +168,112 @@ class ComponentSeeder extends Seeder
     public static function promptFile(string $code): string
     {
         return file_get_contents(database_path("seeders/prompts/{$code}.txt"));
+    }
+
+    /**
+     * The product prompt, with its metadata block turned into slots we can fill.
+     *
+     * @param  array<string, mixed>  $component
+     */
+    public static function productPrompt(array $component): string
+    {
+        return self::normaliseMetadataBlock(
+            self::promptFile($component['code']),
+            [
+                ...$component['variables'],
+                ...array_keys($component['fixed_variables']),
+                'DOCUMENT_REF',
+                'DATE',
+            ],
+        );
+    }
+
+    /**
+     * Section 1 of every client prompt is a fill-in form written as
+     *
+     *     [DOCUMENT_REF]: <e.g., SGA.DB.001.08.26>
+     *
+     * where the bracketed token is the field LABEL and the angle-bracketed part
+     * is the value to supply. Left as-is, PromptRenderer substitutes the label
+     * and the example survives in value position — so the prompt ends up
+     * carrying two document codes and naming the wrong one as the value. That is
+     * not theoretical: a test run allocated SGA.DB.000.00.00 and the model
+     * printed the example, SGA.DB.001.08.26, into the document instead.
+     *
+     * Rewriting each field to
+     *
+     *     DOCUMENT_REF: [DOCUMENT_REF]
+     *
+     * keeps the client's label, drops the example, and puts the slot where the
+     * value belongs. Only section 1 is touched, and only for tokens this
+     * component actually declares — elsewhere the prompts use `[TOKEN]: [TOKEN]`
+     * as a genuine layout instruction (HM prints `[PROJECT_FILE]:
+     * [DOCUMENT_TITLE]` on the cover), which must survive untouched.
+     *
+     * @param  array<int, string>  $tokens
+     */
+    private static function normaliseMetadataBlock(string $prompt, array $tokens): string
+    {
+        $lines = explode("\n", $prompt);
+        $start = null;
+        $end = null;
+
+        foreach ($lines as $i => $line) {
+            if ($start === null && str_contains($line, 'CORE DOCUMENT METADATA')) {
+                // Skip the ==== rule that closes the heading.
+                $start = $i + 2;
+
+                continue;
+            }
+
+            if ($start !== null && $i > $start && str_starts_with($line, '=====')) {
+                $end = $i;
+
+                break;
+            }
+        }
+
+        if ($start === null || $end === null) {
+            return $prompt;
+        }
+
+        // One pass, field by field. Iterating token-by-token with a regex does
+        // not work here: once a field has been rewritten it no longer starts
+        // with a bracket, so the next token's "stop at the following field"
+        // lookahead runs past it and swallows it.
+        $rewritten = [];
+        $current = null;
+
+        foreach (array_slice($lines, $start, $end - $start) as $line) {
+            if (preg_match('/^\[([A-Z][A-Z0-9_]*)\]:/', $line, $match) === 1) {
+                $current = $match[1];
+
+                // A field whose value is itself a placeholder is a layout
+                // instruction, not a form field — leave it exactly as written.
+                $isSlot = in_array($current, $tokens, true)
+                    && preg_match('/^\[[A-Z][A-Z0-9_]*\]:\s*\[/', $line) !== 1;
+
+                $rewritten[] = $isSlot ? $current.': ['.$current.']' : $line;
+                $current = $isSlot ? $current : null;
+
+                continue;
+            }
+
+            // Continuation of a value spec wrapped over several lines. It was
+            // folded into the slot above, so drop it.
+            if ($current !== null && trim($line) !== '') {
+                continue;
+            }
+
+            $current = null;
+            $rewritten[] = $line;
+        }
+
+        return implode("\n", [
+            ...array_slice($lines, 0, $start),
+            ...$rewritten,
+            ...array_slice($lines, $end),
+        ]);
     }
 
     /**
@@ -198,6 +321,8 @@ class ComponentSeeder extends Seeder
           non-overlapping strategic themes.
         - PROJECT_FILE, when present, is a two-word operation codename in capitals, prefixed
           with "PROJECT ".
+        - TARGET_THREAT_MATRIX, when present, is a single line naming the coupled threats,
+          at most 200 characters. It is printed as the document's byline, not as prose.
         PROMPT;
     }
 }

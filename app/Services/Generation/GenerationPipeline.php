@@ -29,6 +29,7 @@ class GenerationPipeline
     public function __construct(
         private readonly ProductCodeService $codes,
         private readonly PromptRenderer $renderer,
+        private readonly AbstractExtractor $abstracts,
     ) {}
 
     /**
@@ -90,6 +91,19 @@ class GenerationPipeline
     }
 
     /**
+     * @param  array<string, string>  $variables
+     */
+    private function subtitle(array $variables): ?string
+    {
+        $subtitle = $variables['BYLINE']
+            ?? $variables['DOCUMENT_SUBTITLE']
+            ?? $variables['TARGET_THREAT_MATRIX']
+            ?? null;
+
+        return $subtitle === null ? null : str($subtitle)->limit(250)->value();
+    }
+
+    /**
      * Persist the LLM output onto the reserved Product and move to QA (FR-25/26).
      */
     public function storeGeneratedProduct(GenerationTask $task, LlmResult $result): Product
@@ -117,11 +131,11 @@ class GenerationPipeline
             // what makes the sequence lock meaningful.
             'code' => $this->codes->allocate($topic->component),
             'title' => str($this->renderer->renderTitle($topic))->limit(250)->value(),
-            // Each prompt names its subtitle slot differently.
-            'byline' => $variables['BYLINE']
-                ?? $variables['DOCUMENT_SUBTITLE']
-                ?? $variables['TARGET_THREAT_MATRIX']
-                ?? null,
+            // Each prompt names its subtitle slot differently. Truncated like
+            // the title: both columns are varchar(255), the value comes from a
+            // model, and a long one must not take down the insert — GPT-4o
+            // returned a 386-character TARGET_THREAT_MATRIX and failed the task.
+            'byline' => $this->subtitle($variables),
             // Filled by storeGeneratedProduct once the model responds.
             'body' => '',
             // No abstract: it is written by a proofreader, never generated.
@@ -157,12 +171,17 @@ class GenerationPipeline
     }
 
     /**
-     * Proofreading stage 1: the corrected title, byline, abstract and document.
-     * The abstract is authored here — the LLM never writes one — and is what the
-     * public sees, so this step is what makes a product releasable. Hands over
-     * to redaction.
+     * Proofreading stage 1: the corrected document. Hands over to redaction.
      *
-     * @param  array<string, string|null>  $attributes  title, byline, abstract, body
+     * The proofreader submits the body alone. The public abstract is lifted
+     * from that body's own Executive Summary — PART I of every product is the
+     * client's Abstract Paper, so the text already exists and asking a human to
+     * write a second one by hand only invites the two to drift apart.
+     *
+     * It is derived here rather than at generation because it must reflect the
+     * proofread document, not the draft the model produced.
+     *
+     * @param  array<string, string|null>  $attributes  body
      */
     public function submitProofread(GenerationTask $task, User $proofreader, array $attributes): void
     {
@@ -172,15 +191,19 @@ class GenerationPipeline
                 'proofread_at' => now(),
             ]);
 
+            $body = (string) Arr::get($attributes, 'body');
+
             $task->product->update([
-                // Title and byline are editable here too: the model's metadata
-                // is a first draft like the rest of the document.
-                ...Arr::only($attributes, ['title', 'byline', 'abstract', 'body']),
+                'body' => $body,
+                // Null would leave the product approved but permanently unable
+                // to release, since the FIFO queue skips products without one.
+                // Keep whatever is already there rather than clear it.
+                'abstract' => $this->abstracts->extract($body) ?? $task->product->abstract,
                 'status' => ProductStatus::AwaitingRedaction,
             ]);
         });
 
-        activity()->causedBy($proofreader)->performedOn($task)->log('abstract and document proofread');
+        activity()->causedBy($proofreader)->performedOn($task)->log('document proofread');
     }
 
     /**

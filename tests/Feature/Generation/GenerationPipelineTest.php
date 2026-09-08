@@ -55,22 +55,32 @@ it('walks a task through proofreading, redaction and approval', function (): voi
     expect($task->refresh()->proofreader_id)->toBe($reviewer->id)
         ->and($task->proofread_at)->not->toBeNull();
 
-    // Stage 1: the abstract is authored here, alongside the corrected title,
-    // byline and document.
+    // Stage 1: the corrected document, and only that. The abstract is lifted
+    // from the document's own Executive Summary.
+    $title = $task->product->title;
+    $byline = $task->product->byline;
+
+    $body = <<<'MARKDOWN'
+    # PART I: ABSTRACT PAPER
+    ## 1. Executive Summary
+    **1.1 Objective**
+    This assessment examines the corrected document and the systemic consequences it traces.
+    ## 2. Analytical Assessment
+    Body text that belongs to the next section and must not reach the preview.
+    MARKDOWN;
+
     $this->actingAs($reviewer)
-        ->postJson(route('api.admin.tasks.proofread', $task), [
-            'title' => 'The corrected title',
-            'byline' => 'The corrected byline',
-            'abstract' => 'A human-written abstract.',
-            'body' => 'The corrected document.',
-        ])
+        ->postJson(route('api.admin.tasks.proofread', $task), ['body' => $body])
         ->assertOk()
         ->assertJsonPath('data.status', TaskStatus::AwaitingRedaction->value);
 
-    expect($task->refresh()->product->abstract)->toBe('A human-written abstract.')
-        ->and($task->product->body)->toBe('The corrected document.')
-        ->and($task->product->title)->toBe('The corrected title')
-        ->and($task->product->byline)->toBe('The corrected byline')
+    expect($task->refresh()->product->body)->toBe($body)
+        ->and($task->product->abstract)
+        ->toBe('This assessment examines the corrected document and the systemic consequences it traces.')
+        // Title and byline were settled when the shell was created; the
+        // proofread call does not carry them and must not clear them.
+        ->and($task->product->title)->toBe($title)
+        ->and($task->product->byline)->toBe($byline)
         ->and($task->product->status)->toBe(ProductStatus::AwaitingRedaction);
 
     // Stage 2: the redaction is reviewed separately and approves the product.
@@ -89,7 +99,7 @@ it('walks a task through proofreading, redaction and approval', function (): voi
         ->and($task->product->published_at)->toBeNull();
 });
 
-it('requires an abstract when submitting a proofread', function (): void {
+it('requires a body when submitting a proofread', function (): void {
     $topic = Topic::factory()->create();
     $reviewer = admin();
 
@@ -98,12 +108,27 @@ it('requires an abstract when submitting a proofread', function (): void {
     $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task));
 
     $this->actingAs($reviewer)
-        ->postJson(route('api.admin.tasks.proofread', $task), [
-            'title' => 'A title',
-            'body' => 'Only the document.',
-        ])
+        ->postJson(route('api.admin.tasks.proofread', $task), [])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('abstract');
+        ->assertJsonValidationErrors('body');
+});
+
+it('keeps the existing abstract when a body yields none', function (): void {
+    $topic = Topic::factory()->create();
+    $reviewer = admin();
+
+    $this->actingAs($reviewer)->postJson(route('api.admin.topics.queue', $topic));
+    $task = GenerationTask::firstOrFail();
+    $task->product->update(['abstract' => 'The abstract already on file.']);
+    $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task));
+
+    // Nothing here is long enough to be prose, so extraction returns null.
+    $this->actingAs($reviewer)
+        ->postJson(route('api.admin.tasks.proofread', $task), ['body' => "# Title\n## 1. Heading"])
+        ->assertOk();
+
+    // Clearing it would leave the product approved and permanently unreleasable.
+    expect($task->refresh()->product->abstract)->toBe('The abstract already on file.');
 });
 
 it('will not skip the redaction stage', function (): void {
