@@ -5,6 +5,7 @@ use App\Enums\TaskStatus;
 use App\Models\GenerationTask;
 use App\Models\Topic;
 use App\Models\User;
+use App\Services\Publishing\ReleaseService;
 
 function admin(): User
 {
@@ -35,6 +36,8 @@ it('runs a queued topic through generation and QA onto the task board', function
 });
 
 it('walks a task through proofreading, redaction and approval', function (): void {
+    config(['publishing.redaction' => true]);
+
     $topic = Topic::factory()->create();
     $reviewer = admin();
 
@@ -132,6 +135,8 @@ it('keeps the existing abstract when a body yields none', function (): void {
 });
 
 it('will not skip the redaction stage', function (): void {
+    config(['publishing.redaction' => true]);
+
     $topic = Topic::factory()->create();
     $reviewer = admin();
 
@@ -204,4 +209,59 @@ it('keeps admin endpoints off-limits to subscribers', function (): void {
     $this->actingAs($subscriber)
         ->getJson(route('api.admin.tasks.index'))
         ->assertForbidden();
+});
+
+it('approves on proofread when the redaction pass is off', function (): void {
+    // The default. Redaction is a commercial device — without it a withheld
+    // subscriber sees the abstract instead of a censored document — so turning
+    // it off must not strand the task, it must approve directly.
+    expect(config('publishing.redaction'))->toBeFalse();
+
+    $topic = Topic::factory()->create();
+    $reviewer = admin();
+
+    $this->actingAs($reviewer)->postJson(route('api.admin.topics.queue', $topic));
+    $task = GenerationTask::firstOrFail();
+    $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task));
+
+    $this->actingAs($reviewer)
+        ->postJson(route('api.admin.tasks.proofread', $task), [
+            'body' => "## 1. Executive Summary\nThe document a proofreader signed off without a redaction pass behind it.",
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.status', TaskStatus::Approved->value);
+
+    expect($task->refresh()->status)->toBe(TaskStatus::Approved)
+        ->and($task->product->status)->toBe(ProductStatus::Approved)
+        // The FIFO release queue orders by this, so it has to be stamped even
+        // though no redaction step ran.
+        ->and($task->product->approved_at)->not->toBeNull()
+        ->and($task->product->published_at)->toBeNull()
+        // Nothing was redacted, so a withheld subscriber falls back to the
+        // abstract rather than a censored document.
+        ->and($task->product->redaction_approved)->toBeFalse();
+
+    app(ReleaseService::class)->releaseBatch();
+
+    expect($task->refresh()->product->status)->toBe(ProductStatus::Published);
+});
+
+it('rejects a redaction outright while the redaction pass is off', function (): void {
+    $topic = Topic::factory()->create();
+    $reviewer = admin();
+
+    $this->actingAs($reviewer)->postJson(route('api.admin.topics.queue', $topic));
+    $task = GenerationTask::firstOrFail();
+    $this->actingAs($reviewer)->postJson(route('api.admin.tasks.open', $task));
+
+    // With the pass off, no task ever reaches `awaiting_redaction`, so redaction
+    // has no state it can act from. Without the explicit guard this would
+    // succeed — `in_proofreading -> approved` is legal when redaction is off —
+    // and approve a product whose body and abstract were never submitted.
+    $this->actingAs($reviewer)
+        ->postJson(route('api.admin.tasks.redact', $task), ['redacted_body' => 'Not now.'])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'invalid_task_transition');
+
+    expect($task->refresh()->status)->toBe(TaskStatus::InProofreading);
 });

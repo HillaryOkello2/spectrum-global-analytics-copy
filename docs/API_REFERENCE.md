@@ -184,8 +184,8 @@ becomes a two-step flow:
 | Task status | What the screen shows | Action |
 |---|---|---|
 | `awaiting_proofreading` | Read-only review | **Open** → `/open` |
-| `in_proofreading` | Editable **body** — that is the whole form | **Submit proofread** → `/proofread` (`{ body }`) |
-| `awaiting_redaction` | Read-only body + editable **redacted body** | **Submit redaction** → `/redact` |
+| `in_proofreading` | Editable **body** — that is the whole form | **Submit proofread** → `/proofread` (`{ body }`), which **approves the product directly** |
+| `awaiting_redaction` | Read-only body + editable **redacted body** | **Submit redaction** → `/redact` — **currently unreachable**: the redaction pass is off (`PUBLISHING_REDACTION=false`), so proofreading approves outright and no task enters this state. `/redact` returns **409** |
 | `approved` | Done — waiting for release | none |
 
 - Add a **`awaiting_redaction` column/filter** to the board, or it will look like tasks vanish

@@ -21,4 +21,23 @@ return [
 
     'release_cron' => env('PUBLISHING_RELEASE_CRON', '0 * * * *'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Redaction pass
+    |--------------------------------------------------------------------------
+    |
+    | The second review stage, where a redacted copy of the document is written
+    | for subscribers whose tier withholds the full one. It is a commercial
+    | device, not a security one: without a redaction, a denied or quota-
+    | exhausted subscriber sees only the abstract.
+    |
+    | Off for now — proofreading approves the product directly. Turning this
+    | back on re-inserts `awaiting_redaction` between proofreading and approval;
+    | nothing else needs to change, and products approved while it was off keep
+    | working (they simply have no redacted copy to serve).
+    |
+    */
+
+    'redaction' => (bool) env('PUBLISHING_REDACTION', false),
+
 ];

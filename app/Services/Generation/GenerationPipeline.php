@@ -185,11 +185,16 @@ class GenerationPipeline
      */
     public function submitProofread(GenerationTask $task, User $proofreader, array $attributes): void
     {
-        DB::transaction(function () use ($task, $proofreader, $attributes): void {
-            $this->transition($task, TaskStatus::AwaitingRedaction, [
-                'proofreader_id' => $proofreader->id,
-                'proofread_at' => now(),
-            ]);
+        // With the redaction pass off, proofreading is the whole editorial
+        // review and approves the product outright.
+        $redacting = (bool) config('publishing.redaction');
+
+        DB::transaction(function () use ($task, $proofreader, $attributes, $redacting): void {
+            $this->transition(
+                $task,
+                $redacting ? TaskStatus::AwaitingRedaction : TaskStatus::Approved,
+                ['proofreader_id' => $proofreader->id, 'proofread_at' => now()],
+            );
 
             $body = (string) Arr::get($attributes, 'body');
 
@@ -199,11 +204,15 @@ class GenerationPipeline
                 // to release, since the FIFO queue skips products without one.
                 // Keep whatever is already there rather than clear it.
                 'abstract' => $this->abstracts->extract($body) ?? $task->product->abstract,
-                'status' => ProductStatus::AwaitingRedaction,
+                'status' => $redacting ? ProductStatus::AwaitingRedaction : ProductStatus::Approved,
+                // Stamped here when there is no redaction step to stamp it, and
+                // it is what the FIFO release queue orders by.
+                ...($redacting ? [] : ['approved_at' => now()]),
             ]);
         });
 
-        activity()->causedBy($proofreader)->performedOn($task)->log('document proofread');
+        activity()->causedBy($proofreader)->performedOn($task)
+            ->log($redacting ? 'document proofread' : 'document proofread and approved');
     }
 
     /**
@@ -213,6 +222,16 @@ class GenerationPipeline
      */
     public function submitRedaction(GenerationTask $task, User $redactor, string $redactedBody): void
     {
+        // Redaction may only act on a task that has completed proofreading.
+        // Checking `awaiting_redaction` explicitly rather than relying on the
+        // transition map: with publishing.redaction off, `in_proofreading ->
+        // approved` is legal, so the map alone would let this approve a product
+        // whose body and abstract were never submitted. With the pass off no
+        // task ever reaches `awaiting_redaction`, so this always refuses.
+        if ($task->status !== TaskStatus::AwaitingRedaction) {
+            throw new InvalidTaskTransitionException($task->status, TaskStatus::Approved);
+        }
+
         DB::transaction(function () use ($task, $redactor, $redactedBody): void {
             $this->transition($task, TaskStatus::Approved, [
                 'redactor_id' => $redactor->id,

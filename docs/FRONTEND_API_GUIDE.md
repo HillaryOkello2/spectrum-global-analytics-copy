@@ -158,7 +158,7 @@ nested inside a product payload.
   `/vault/components/{component}/products`; `POST /admin/products/{product}/hide` | `/unhide`.
 - Task Board (proofreading), now **two review stages**:
   `GET /admin/tasks?status=`, then per task
-  `POST /admin/tasks/{task}/open` → `/proofread` (`{ body }`) → `/redact`
+  `POST /admin/tasks/{task}/open` → `/proofread` (`{ body }`) → **approved**. The `/redact` stage is switched off (`PUBLISHING_REDACTION=false`), so `awaiting_redaction` never occurs — keep the column, it returns when the pass is re-enabled
   (`{ redacted_body }`), or `/reject` (`{ note }`). `/approve` skips the redaction stage.
   Transitions are guarded — an out-of-order call returns 409 `invalid_task_transition`.
   **The abstract is derived at the `/proofread` step** from the body's own Executive Summary, so a generated

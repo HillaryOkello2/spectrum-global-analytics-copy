@@ -55,10 +55,9 @@ it('takes the daily brief from scheduler tick to published catalogue entry', fun
         'body' => $product->body,
     ])->assertOk();
 
+    // publishing.redaction is off, so proofreading approves outright — there is
+    // no redaction pass between the two.
     expect($product->refresh()->abstract)->not->toBeNull();
-    $this->actingAs($reviewer)->postJson(route('api.admin.tasks.redact', $task), [
-        'redacted_body' => 'The redacted document.',
-    ])->assertOk();
 
     expect($product->refresh()->status)->toBe(ProductStatus::Approved)
         // Approval is not publication.

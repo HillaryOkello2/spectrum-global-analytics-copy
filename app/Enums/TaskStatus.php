@@ -27,9 +27,17 @@ enum TaskStatus: string
             self::Generating => [self::QaRunning, self::Failed],
             self::QaRunning => [self::AwaitingProofreading, self::Failed],
             self::AwaitingProofreading => [self::InProofreading],
-            // Proofreading the abstract + document hands over to a separate
-            // redaction pass; only then can the task be approved.
-            self::InProofreading => [self::AwaitingRedaction, self::Rejected],
+            // Proofreading hands over to a separate redaction pass, and only
+            // then can the task be approved. With publishing.redaction off there
+            // is no such pass and proofreading approves directly.
+            //
+            // Config-dependent rather than allowing both: listing Approved
+            // alongside AwaitingRedaction would make `/redact` legal straight
+            // from `in_proofreading`, approving a product whose body and
+            // abstract were never submitted. Exactly one path is legal at a time.
+            self::InProofreading => config('publishing.redaction')
+                ? [self::AwaitingRedaction, self::Rejected]
+                : [self::Approved, self::Rejected],
             self::AwaitingRedaction => [self::Approved, self::Rejected],
             self::Rejected => [self::InProofreading],
             // Publication is not immediate — products:release takes approved
