@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\FailOnTokenCeiling;
 use App\Models\GenerationTask;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
@@ -28,6 +29,17 @@ class RunQaPromptJob implements ShouldQueue
         public GenerationTask $task,
     ) {
         $this->onQueue($task->topic->component->queue_name);
+    }
+
+    /**
+     * The QA prompt re-sends the whole document, so a retry after running out
+     * of tokens is the most expensive wasted call in the pipeline.
+     *
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new FailOnTokenCeiling];
     }
 
     public function handle(GenerationPipeline $pipeline, LlmManager $llm, PromptRenderer $renderer): void

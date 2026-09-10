@@ -55,8 +55,8 @@ Implications)
 7. Advisories (7.1 Primary Advisory | 7.2 Secondary Advisory | 7.3 Third Tier Advisory)
 8. Conclusion (8.1 Primary Conclusion | 8.2 Secondary Conclusion | 8.3 Third Tier Conclusion)
 9. Product Information (9.1 Copyrights | 9.2 Disclaimer | 9.3 Methodology)
-10. SGA 12 Pillar Architecture (10.1 First Order Pillars | 10.2 Second Order Pillars | 10.3 Third Order
-Pillars)
+10. SGA 12 Domain Architecture (10.1 First Order Domains | 10.2 Second Order Domains | 10.3 Third Order
+Domains)
 
 ----------------------------------------------------------------------
 EXPLICIT ABSTRACT PAPER GENERATION (2 PARAGRAPHS × 25 WORDS EACH PER SUBSECTION)
@@ -72,8 +72,8 @@ Implications)
 7. Advisories (7.1 Primary Advisory, 7.2 Secondary Advisory, 7.3 Third Tier Advisory)
 8. Conclusion (8.1 Primary Conclusion, 8.2 Secondary Conclusion, 8.3 Third Tier Conclusion)
 9. Product Information (9.1 Copyrights, 9.2 Disclaimer, 9.3 Methodology)
-10. SGA 12 Pillar Architecture (10.1 First Order Pillars, 10.2 Second Order Pillars, 10.3 Third Order
-Pillars)
+10. SGA 12 Domain Architecture (10.1 First Order Domains, 10.2 Second Order Domains, 10.3 Third Order
+Domains)
 
 ======================================================================
 4. PART II: MONTHLY FOCUS ANALYTICAL BODY (3 PARAGRAPHS × 35 WORDS PER SUBSECTION)
@@ -90,8 +90,8 @@ Section 2: Strategic Assessment: Geopolitical & Sovereign Security Matrix
 Section 3: Strategic Assessment: Geoeconomic, Energy & Supply Chain Statecraft
  3.1 Sovereign Capital Flows & Currency Mechanics
  3.2 Strategic Resource Access & Supply Bottlenecks
-Section 4: Multi-Sphere Cross-Pillar Threat Convergence & Risk Cascades
- 4.1 Multi-Pillar Interaction Dynamics
+Section 4: Multi-Sphere Cross-Domain Threat Convergence & Risk Cascades
+ 4.1 Multi-Domain Interaction Dynamics
  4.2 Systemic Shock Propagation Pathways
 Section 5: Decadal Scenario Trajectories & Stress-Testing Models
  5.1 Long-Horizon Predictive Scenarios

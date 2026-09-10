@@ -92,6 +92,8 @@ it('renders the client prompt with no placeholder left behind', function (): voi
         ->not->toContain('[BYLINE]')
         ->not->toContain('[DOCUMENT_REF]')
         ->not->toContain('[DATE]')
-        // The pillar vector codes are content and must survive rendering.
-        ->toContain('SGA 12 Pillar Architecture');
+        // The domain architecture is content and must survive rendering.
+        ->toContain('SGA 12 Domain Architecture')
+        // Pillars were renamed domains throughout; none may be left behind.
+        ->not->toContain('Pillar');
 });

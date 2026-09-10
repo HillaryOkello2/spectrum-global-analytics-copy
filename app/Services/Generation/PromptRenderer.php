@@ -18,7 +18,7 @@ class PromptRenderer
 {
     /**
      * Matches a placeholder: uppercase, digits and underscores only, so prose
-     * like "[SGA.P1]" (a pillar vector code the prompts legitimately contain)
+     * like "[SGA.D1]" (a domain vector code the prompts legitimately contain)
      * is left alone.
      */
     private const TOKEN = '/\[([A-Z][A-Z0-9_]*)\]/';

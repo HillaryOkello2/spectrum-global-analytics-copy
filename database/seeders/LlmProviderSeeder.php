@@ -20,7 +20,9 @@ class LlmProviderSeeder extends Seeder
             ['name' => 'Claude Sonnet 5', 'vendor' => 'Anthropic', 'driver' => 'anthropic', 'model_id' => 'claude-sonnet-5'],
             ['name' => 'Gemini 3.7 Flash', 'vendor' => 'Google', 'driver' => 'gemini', 'model_id' => 'gemini-3.7-flash'],
             ['name' => 'GPT-4o', 'vendor' => 'OpenAI', 'driver' => 'openai', 'model_id' => 'gpt-4o'],
-            ['name' => 'DeepSeek-V4-Pro', 'vendor' => 'DeepSeek', 'driver' => 'deepseek', 'model_id' => 'deepseek-v4-pro'],
+            // V4 Pro is discontinued on 2026-09-14: calls are re-routed to V4.1
+            // Flash and billed at its price. Pinned to Flash rather than moved.
+            ['name' => 'DeepSeek V4.1 Flash', 'vendor' => 'DeepSeek', 'driver' => 'deepseek', 'model_id' => 'deepseek-flash'],
             ['name' => 'Kimi K2.6', 'vendor' => 'Moonshot AI', 'driver' => 'moonshot', 'model_id' => 'kimi-k2.6'],
             ['name' => 'MiniMax M3', 'vendor' => 'MiniMax', 'driver' => 'minimax', 'model_id' => 'minimax-m3'],
         ];

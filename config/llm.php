@@ -45,6 +45,12 @@ return [
             'api_key' => env('GEMINI_API_KEY'),
             'max_tokens' => (int) env('LLM_MAX_TOKENS', 32000),
             'timeout' => (int) env('LLM_TIMEOUT', 600),
+            // Gemini thinks by default and pays for it out of maxOutputTokens,
+            // like DeepSeek and Kimi. gemini-3.7-flash cannot switch it off, so
+            // it is capped instead: at most this many tokens of thinking, the
+            // rest of max_tokens left for the document. Empty = the model's
+            // own default, uncapped. See GeminiClient::thinkingOptions().
+            'thinking_budget' => env('GEMINI_THINKING_BUDGET', 2048),
         ],
         'openai' => [
             'client' => 'openai-compatible',
@@ -59,6 +65,11 @@ return [
             'api_key' => env('DEEPSEEK_API_KEY'),
             'max_tokens' => (int) env('LLM_MAX_TOKENS', 8000),
             'timeout' => (int) env('LLM_TIMEOUT', 600),
+            // DeepSeek reasons by default, and pays for it out of max_tokens:
+            // V4 Pro spent all 8,000 on a CC brief without writing a word
+            // (2026-09-10), and was billed for them. Off by default; set
+            // 'enabled' to turn it back on.
+            'thinking' => env('DEEPSEEK_THINKING', 'disabled'),
         ],
         'moonshot' => [
             'client' => 'openai-compatible',
@@ -66,6 +77,10 @@ return [
             'api_key' => env('MOONSHOT_API_KEY'),
             'max_tokens' => (int) env('LLM_MAX_TOKENS', 16000),
             'timeout' => (int) env('LLM_TIMEOUT', 600),
+            // Same trap as DeepSeek, and the same switch: Kimi K2.6 spent 15,999
+            // of 16,000 tokens reasoning on an ES essay and wrote nothing
+            // (2026-09-10). Off by default; set 'enabled' to turn it back on.
+            'thinking' => env('MOONSHOT_THINKING', 'disabled'),
         ],
         'minimax' => [
             'client' => 'openai-compatible',

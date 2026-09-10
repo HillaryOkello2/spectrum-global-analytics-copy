@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 class OpenAiCompatibleClient implements LlmClient
 {
     /**
-     * @param  array{base_url: string, api_key: ?string, timeout?: int, max_tokens?: int}  $config
+     * @param  array{base_url: string, api_key: ?string, timeout?: int, max_tokens?: int, thinking?: ?string}  $config
      */
     public function __construct(
         private readonly array $config,
@@ -34,6 +34,7 @@ class OpenAiCompatibleClient implements LlmClient
                 'messages' => [
                     ['role' => 'user', 'content' => $prompt],
                 ],
+                ...$this->thinkingOptions(),
             ])
             ->throw();
 
@@ -41,9 +42,31 @@ class OpenAiCompatibleClient implements LlmClient
         $text = (string) $response->json('choices.0.message.content', '');
 
         if (trim($text) === '') {
-            throw EmptyLlmResponseException::for($model, $response->json('choices.0.finish_reason'));
+            throw EmptyLlmResponseException::for(
+                $model,
+                $response->json('choices.0.finish_reason'),
+                $response->json('usage.completion_tokens_details.reasoning_tokens'),
+            );
         }
 
         return new LlmResult(text: $text, model: $model);
+    }
+
+    /**
+     * Sent only when this driver's config sets `thinking`. It is a DeepSeek
+     * extension, not part of the OpenAI API — OpenAI rejects arguments it does
+     * not know — so it must never reach a vendor that has not opted in.
+     *
+     * @return array<string, mixed>
+     */
+    private function thinkingOptions(): array
+    {
+        $mode = $this->config['thinking'] ?? null;
+
+        if ($mode === null || $mode === '') {
+            return [];
+        }
+
+        return ['thinking' => ['type' => $mode === 'enabled' ? 'enabled' : 'disabled']];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\FailOnTokenCeiling;
 use App\Models\Component;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\TopicGenerator;
@@ -30,6 +31,14 @@ class GenerateTopicJob implements ShouldQueue
         public Component $component,
     ) {
         $this->onQueue($component->queue_name);
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new FailOnTokenCeiling];
     }
 
     public function handle(TopicGenerator $generator, GenerationPipeline $pipeline): void

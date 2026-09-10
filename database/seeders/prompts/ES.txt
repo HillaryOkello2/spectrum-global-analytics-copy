@@ -85,10 +85,10 @@ TABLE OF CONTENTS
   9.1 Copyrights
   9.2 Disclaimer
   9.3 Methodology
-10. SGA 12 Pillar Architecture
-   10.1 First Order Pillars
-   10.2 Second Order Pillars
-   10.3 Third Order Pillars
+10. SGA 12 Domain Architecture
+   10.1 First Order Domains
+   10.2 Second Order Domains
+   10.3 Third Order Domains
 
 ----------------------------------------------------------------------
 EXPLICIT ABSTRACT PAPER GENERATION (2 PARAGRAPHS × 25 WORDS EACH PER SUBSECTION)
@@ -129,10 +129,10 @@ EXPLICIT ABSTRACT PAPER GENERATION (2 PARAGRAPHS × 25 WORDS EACH PER SUBSECTION
   9.1 Copyrights (Paragraph 1: 25 words | Paragraph 2: 25 words)
   9.2 Disclaimer (Paragraph 1: 25 words | Paragraph 2: 25 words)
   9.3 Methodology (Paragraph 1: 25 words | Paragraph 2: 25 words)
-10. SGA 12 Pillar Architecture
-   10.1 First Order Pillars (Paragraph 1: 25 words | Paragraph 2: 25 words)
-   10.2 Second Order Pillars (Paragraph 1: 25 words | Paragraph 2: 25 words)
-   10.3 Third Order Pillars (Paragraph 1: 25 words | Paragraph 2: 25 words)
+10. SGA 12 Domain Architecture
+   10.1 First Order Domains (Paragraph 1: 25 words | Paragraph 2: 25 words)
+   10.2 Second Order Domains (Paragraph 1: 25 words | Paragraph 2: 25 words)
+   10.3 Third Order Domains (Paragraph 1: 25 words | Paragraph 2: 25 words)
 
 ======================================================================
 4. PART II: FULL ESSAY ANALYTICAL BODY (3 PARAGRAPHS / 35 WORDS EACH)
@@ -143,6 +143,6 @@ contain EXACTLY 35 WORDS.
 
 1. Grand Strategic Context & Paradigm Shift
 2. Structural Drivers & Systemic Friction Points
-3. Multi-Sphere Cross-Pillar Impact Analysis
+3. Multi-Sphere Cross-Domain Impact Analysis
 4. Policy Playbooks & Sovereign Strategic Recommendations
 5. Strategic Synthesis & Concluding Directives

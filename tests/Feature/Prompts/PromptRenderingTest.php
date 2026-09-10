@@ -26,11 +26,11 @@ it('throws rather than shipping an unfilled placeholder', function (): void {
         ->toThrow(UnresolvedPromptPlaceholderException::class);
 });
 
-it('leaves the pillar vector codes in the prompts alone', function (): void {
-    // The client's prompts require [SGA.P1.01]-style vector codes in the output.
+it('leaves the domain vector codes in the prompts alone', function (): void {
+    // The prompts require [SGA.D1.01]-style domain vector codes in the output.
     // Those are content, not slots, and must survive rendering untouched.
-    expect(renderer()->render('Map against [SGA.P1] and [SGA.P12.03].', []))
-        ->toBe('Map against [SGA.P1] and [SGA.P12.03].');
+    expect(renderer()->render('Map against [SGA.D1] and [SGA.D12.03].', []))
+        ->toBe('Map against [SGA.D1] and [SGA.D12.03].');
 });
 
 it('supplies the document reference and date itself', function (): void {

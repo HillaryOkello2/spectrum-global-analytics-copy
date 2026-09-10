@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\FailOnTokenCeiling;
 use App\Models\GenerationTask;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
@@ -12,8 +13,10 @@ use Throwable;
 
 /**
  * Step 1 of the pipeline: send the Topic's prompt to the component's assigned LLM
- * (FR-24/25), then chain the QA prompt job. Retries with backoff; a final
- * failure leaves the task in `failed` with the error surfaced to Admins (R-01).
+ * (FR-24/25), then chain the QA prompt job. Retries with backoff — except when
+ * the model ran out of tokens before writing, which retrying cannot fix. A
+ * final failure leaves the task in `failed` with the error surfaced to Admins
+ * (R-01).
  */
 class GenerateProductJob implements ShouldQueue
 {
@@ -30,6 +33,14 @@ class GenerateProductJob implements ShouldQueue
         // Per-component queue: a 56-page Research Paper must not head-of-line
         // block the daily brief.
         $this->onQueue($task->topic->component->queue_name);
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new FailOnTokenCeiling];
     }
 
     public function handle(GenerationPipeline $pipeline, LlmManager $llm, PromptRenderer $renderer): void
