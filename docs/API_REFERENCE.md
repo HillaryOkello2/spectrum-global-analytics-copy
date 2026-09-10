@@ -345,10 +345,10 @@ Authorization: Bearer 12|Xy9AbC...the-token-string
 
 **What a token can reach:**
 - A **subscriber** token works on Subscriber endpoints only. Any `/admin/*` endpoint returns `403`.
-- A **staff** token reaches the parts of `/admin/*` its permissions allow — see [Permissions & access control](#permissions--access-control). It cannot use the Subscriber portal endpoints (`403`), which are subscriber-role-only.
+- A **staff** token reaches the parts of `/admin/*` its permissions allow — see [Permissions & access control](#permissions--access-control). Of the Subscriber portal endpoints it can use only its own profile and password (`GET`/`PATCH /me`, `PUT /me/password`); the rest are subscriber-role-only and return `403`.
 - Use the `portal` field from the login response (`"subscriber"` or `"admin"`) to decide where to route the user after login, and the `permissions` array to decide which admin navigation to render.
 
-**Rehydrating a session:** on page refresh you hold a token but no user object. `GET /auth/me` returns the user and their `portal` for **any** authenticated role — use it instead of `GET /me`, which is subscriber-only and returns `403` for staff.
+**Rehydrating a session:** on page refresh you hold a token but no user object. `GET /auth/me` returns the user and their `portal` for **any** authenticated role — prefer it over `GET /me` for this, since it also tells you which portal to route into.
 
 **Logout:** `POST /auth/logout` revokes the current token.
 
@@ -516,9 +516,9 @@ Create an account on a chosen tier.
 ---
 
 ### GET `/auth/me`  *(requires token — any role)*
-Current session ("who am I"). Works for **any** authenticated account — unlike `GET /me`, which is
-subscriber-only and returns `403` for staff. Call this on app boot / page refresh to rehydrate the user and decide which portal
-to route into (the `portal` field is the redirect signal, same as in the login response).
+Current session ("who am I"). Works for **any** authenticated account. Call this on app boot / page
+refresh to rehydrate the user and decide which portal to route into (the `portal` field is the
+redirect signal, same as in the login response). `GET /me` returns the same user without `portal`.
 
 **Response (`200`):**
 ```json
@@ -552,13 +552,26 @@ Revokes the current token. **Response (`200`):** `{ "message": "Logged out." }`
 ### POST `/auth/forgot-password`
 **Body:** `email` (required, email).
 **Response (`200`):** `{ "message": "If that email address is registered, a reset link has been sent." }`
-(Always this message — it never reveals whether the email exists.)
+(Always this message — it never reveals whether the email exists, and it stays the same even when
+the mail server is down.)
+
+If the address is registered, the user is emailed a link into **the frontend app they sign in to** —
+the admin portal for staff, the subscriber portal for everyone else:
+
+```
+{FRONTEND_ADMIN_URL or FRONTEND_SUBSCRIBER_URL}/reset-password?token=…&email=…
+```
+
+That page should read `token` and `email` from the query string and post them, with the new
+password, to `POST /auth/reset-password`. Links expire after **60 minutes**. The path is
+configurable (`FRONTEND_RESET_PASSWORD_PATH`) if the page lives elsewhere.
 
 ---
 
 ### POST `/auth/reset-password`
-**Body:** `token` (from the email), `email`, `password`, `password_confirmation`.
-**Response (`200`):** `{ "message": "Password has been reset." }`
+**Body:** `token` (from the link), `email` (from the link), `password`, `password_confirmation`.
+**Response (`200`):** `{ "message": "Password has been reset." }` Every existing token for the
+account is revoked, so the user signs in again with the new password.
 **Errors:** `422` (bad/expired token or weak password).
 
 ---
@@ -691,7 +704,8 @@ Current user's profile.
 ### PATCH `/me`
 Update profile. **Body (all optional):** `first_name`, `last_name`, `phone`, `country`, `email` (unique, ignoring self). Returns the updated user (same shape as `GET /me`).
 
-### PUT `/me/password`
+### PUT `/me/password`  *(any authenticated user — staff included)*
+Staff use this to replace the temporary password they were emailed when an admin created their account.
 **Body:** `current_password` (must match existing), `password`, `password_confirmation`.
 **Response (`200`):** `{ "message": "Password updated." }`. Other sessions' tokens are revoked; the current one stays valid. **Errors:** `422` if `current_password` is wrong or new password is weak.
 
@@ -902,6 +916,11 @@ So a role granting only `access admin portal` + `proofread products` can reach t
 | PATCH | `/admin/users/{user}` | Update a user. |
 
 **POST body:** `first_name`, `last_name`, `phone`, `country`, `email` (unique), `password`, `roles` (array of role names, ≥1 — any staff role, e.g. `["admin"]` or a custom `["Proofreader"]`). Returns `201`. The account is created `active`, with no subscription.
+
+The new user is **emailed their sign-in details** — their email, the password you set, and a link to
+the admin portal's sign-in page — and asked to change the password once signed in
+(`PUT /me/password`). The response carries **`meta.accountEmailSent`**: `true` if the email went out,
+`false` if mail failed. On `false` the account still exists; pass the password on another way.
 **PATCH body (all optional):** `first_name`, `last_name`, `phone`, `country`, `status` (UserStatus), `roles` (array).
 **Response:** `UserResource` (see `GET /me` shape). `{user}` = user `publicId`.
 

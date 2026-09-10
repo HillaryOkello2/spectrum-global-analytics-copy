@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\Access\FrontendLinks;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -30,5 +32,12 @@ class AppServiceProvider extends ServiceProvider
 
         // Roles have no public_id — the API addresses them by name throughout.
         Route::bind('role', fn (string $value) => Role::where('name', $value)->firstOrFail());
+
+        // Without this the reset mail builds its link from a `password.reset`
+        // route, which an API-only app does not have — sending threw, and
+        // POST /auth/forgot-password returned a 500 without mailing anything.
+        ResetPassword::createUrlUsing(
+            fn (User $user, string $token) => app(FrontendLinks::class)->resetPassword($user, $token),
+        );
     }
 }

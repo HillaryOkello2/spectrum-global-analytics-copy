@@ -104,8 +104,15 @@ it('identifies the session and portal for any authenticated role via auth/me', f
         ->assertOk()
         ->assertJsonPath('data.portal', 'subscriber');
 
-    // Admins are still (correctly) barred from the subscriber-only profile route.
-    $this->actingAs($admin)->getJson(route('api.me.show'))->assertForbidden();
+    // /me is the user's own profile, open to staff too — they need it to change
+    // the temporary password emailed when an admin creates their account.
+    $this->actingAs($admin)
+        ->getJson(route('api.me.show'))
+        ->assertOk()
+        ->assertJsonPath('data.email', $admin->email);
+
+    // The genuinely subscriber-only routes stay barred to staff.
+    $this->actingAs($admin)->getJson(route('api.me.subscription'))->assertForbidden();
 });
 
 it('rejects unauthenticated access to auth/me', function (): void {

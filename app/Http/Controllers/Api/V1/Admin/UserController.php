@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\StoreUserRequest;
 use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\Access\AccountMailer;
 use App\Services\Access\UserAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -21,6 +22,7 @@ class UserController extends Controller
 {
     public function __construct(
         private readonly UserAccessService $access,
+        private readonly AccountMailer $mailer,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -35,6 +37,13 @@ class UserController extends Controller
         return UserResource::collection($users);
     }
 
+    /**
+     * Create a staff account and email the new user their sign-in details.
+     *
+     * `meta.accountEmailSent` reports whether that email went out. When it is
+     * false the account still exists, and the admin has to pass the password
+     * on some other way.
+     */
     public function store(StoreUserRequest $request): UserResource
     {
         $user = User::create([
@@ -44,9 +53,13 @@ class UserController extends Controller
 
         activity()->causedBy($request->user())->performedOn($user)->log('admin user created');
 
-        return new UserResource(
-            $this->access->syncRoles($user, $request->validated('roles'), $request->user()),
-        );
+        $user = $this->access->syncRoles($user, $request->validated('roles'), $request->user());
+
+        // After the roles are synced: the sign-in link is addressed to the
+        // admin or subscriber app according to them.
+        $emailed = $this->mailer->sendAccountCreated($user, $request->validated('password'));
+
+        return (new UserResource($user))->additional(['meta' => ['accountEmailSent' => $emailed]]);
     }
 
     public function show(User $user): UserResource

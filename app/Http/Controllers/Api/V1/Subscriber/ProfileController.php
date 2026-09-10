@@ -8,7 +8,10 @@ use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 
 /**
- * @group Subscriber Portal
+ * @group Account
+ *
+ * The signed-in user's own profile — any authenticated user, staff included.
+ * Routed outside the subscriber role gate despite the namespace.
  */
 class ProfileController extends Controller
 {

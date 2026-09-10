@@ -92,7 +92,9 @@ Domain `code` values you should handle in the UI:
 ## The four areas
 
 ### Authentication (public)
-`register`, `login`, `logout`, `forgot-password`, `reset-password`.
+`register`, `login`, `logout`, `forgot-password`, `reset-password`. The reset email links to
+`{portal origin}/reset-password?token=…&email=…` — staff to the admin portal, subscribers to the
+subscriber portal — and that page posts both values, with the new password, to `/auth/reset-password`.
 
 ### Public Catalogue (public, no token)
 Browse without logging in (FR-08):
@@ -115,7 +117,8 @@ nested inside a product payload.
 
 ### Subscriber Portal (token, role `subscriber`)
 - `GET /dashboard` — active subscription card + recent products.
-- `GET /me`, `PATCH /me`, `PUT /me/password` — profile + password.
+- `GET /me`, `PATCH /me`, `PUT /me/password` — profile + password. **Open to staff too**, the only
+  routes here that are: staff need them to change the temporary password they are emailed.
 - `GET /me/subscription` — subscription details incl. tier allocations.
 - `GET /me/invoices`, `GET /me/invoices/{invoice}` — billing history.
 - `GET /products/{product}` — **entitlement-gated product**, served at one of three content levels.
@@ -139,6 +142,8 @@ nested inside a product payload.
 ### Admin Portal (token, role `admin` / `System Admin`)
 - Users: `GET/POST /admin/users`, `GET/PATCH /admin/users/{user}`,
   `GET/PUT /admin/users/{user}/roles`, `GET/PUT /admin/users/{user}/permissions`.
+  `POST` emails the new user their sign-in details (email, the password set, admin sign-in link).
+  Check **`meta.accountEmailSent`** — if `false`, mail failed and the admin must share the password.
   **Staff accounts only** — a subscriber `publicId` here returns `404`, and `subscriber` is not an
   assignable role (`422`). Subscribers live under `/admin/subscribers`.
 - Roles: full CRUD at `/admin/roles` (`{role}` is the role **name**, URL-encoded) plus

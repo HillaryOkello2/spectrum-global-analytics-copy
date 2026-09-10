@@ -7,7 +7,11 @@ use App\Http\Requests\Profile\ChangePasswordRequest;
 use Illuminate\Http\JsonResponse;
 
 /**
- * @group Subscriber Portal
+ * @group Account
+ *
+ * Change the signed-in user's own password — any authenticated user, staff
+ * included, so staff can replace the temporary password they were emailed.
+ * Routed outside the subscriber role gate despite the namespace.
  */
 class PasswordController extends Controller
 {

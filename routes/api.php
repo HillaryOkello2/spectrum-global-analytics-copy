@@ -34,11 +34,15 @@ Route::prefix('v1')->as('api.')->group(function (): void {
         Route::get('auth/me', [Public\Auth\AuthenticatedSessionController::class, 'show'])->name('auth.me');
         Route::post('auth/logout', [Public\Auth\AuthenticatedSessionController::class, 'destroy'])->name('auth.logout');
 
+        // Own profile and password — any authenticated user, staff included.
+        // Outside `role:subscriber` so staff can change the temporary password
+        // they were emailed when an admin created their account.
+        Route::apiSingleton('me', Subscriber\ProfileController::class);
+        Route::put('me/password', [Subscriber\PasswordController::class, 'update'])->name('me.password');
+
         // Subscriber portal (FR-31..37)
         Route::middleware('role:subscriber')->group(function (): void {
             Route::get('dashboard', Subscriber\DashboardController::class)->name('dashboard');
-            Route::apiSingleton('me', Subscriber\ProfileController::class);
-            Route::put('me/password', [Subscriber\PasswordController::class, 'update'])->name('me.password');
             Route::get('me/subscription', [Subscriber\SubscriptionController::class, 'show'])->name('me.subscription');
             Route::post('me/subscription/renew', Subscriber\RenewSubscriptionController::class)->name('me.subscription.renew');
             Route::post('me/subscription/upgrade', Subscriber\UpgradeSubscriptionController::class)->name('me.subscription.upgrade');
