@@ -18,7 +18,10 @@ class LlmProviderSeeder extends Seeder
     {
         $providers = [
             ['name' => 'Claude Sonnet 5', 'vendor' => 'Anthropic', 'driver' => 'anthropic', 'model_id' => 'claude-sonnet-5'],
-            ['name' => 'Gemini 3.7 Flash', 'vendor' => 'Google', 'driver' => 'gemini', 'model_id' => 'gemini-3.7-flash'],
+            // 3.6 rather than 3.7: on this key 3.7-flash answered every full
+            // document with 503 "high demand" (2026-09-10) while 3.6 wrote one
+            // in 45s — and only 3.6 lets thinking be switched fully off.
+            ['name' => 'Gemini 3.6 Flash', 'vendor' => 'Google', 'driver' => 'gemini', 'model_id' => 'gemini-3.6-flash'],
             ['name' => 'GPT-4o', 'vendor' => 'OpenAI', 'driver' => 'openai', 'model_id' => 'gpt-4o'],
             // V4 Pro is discontinued on 2026-09-14: calls are re-routed to V4.1
             // Flash and billed at its price. Pinned to Flash rather than moved.

@@ -131,18 +131,27 @@ function geminiReply(string $text = 'The answer.'): array
     return ['candidates' => [['content' => ['parts' => [['text' => $text]]], 'finishReason' => 'STOP']]];
 }
 
-it('caps Gemini thinking by default', function (): void {
-    // gemini-3.7-flash has no off switch — a positive thinkingBudget is the one
-    // control it honours — so thinking is capped rather than disabled.
+it('switches Gemini thinking off by default', function (): void {
+    // thinkingLevel "minimal" turns it fully off on gemini-3.6-flash.
     Http::fake(['*' => Http::response(geminiReply())]);
 
-    (new GeminiClient(config('llm.drivers.gemini'), 'gemini-3.7-flash'))->generate('p');
+    (new GeminiClient(config('llm.drivers.gemini'), 'gemini-3.6-flash'))->generate('p');
 
-    Http::assertSent(fn (Request $request): bool => $request['generationConfig']['thinkingConfig'] === ['thinkingBudget' => 2048]
+    Http::assertSent(fn (Request $request): bool => $request['generationConfig']['thinkingConfig'] === ['thinkingLevel' => 'minimal']
         && $request['generationConfig']['maxOutputTokens'] === config('llm.drivers.gemini.max_tokens'));
 });
 
-it('leaves Gemini thinking at the model default when no budget is set', function (): void {
+it('caps Gemini thinking with a budget for a model that cannot switch it off', function (): void {
+    // gemini-3.7-flash rejects "minimal" and ignores a budget of 0; a positive
+    // budget is the one control it honours.
+    Http::fake(['*' => Http::response(geminiReply())]);
+
+    (new GeminiClient(compatibleConfig(['thinking_level' => '', 'thinking_budget' => 2048]), 'gemini-3.7-flash'))->generate('p');
+
+    Http::assertSent(fn (Request $request): bool => $request['generationConfig']['thinkingConfig'] === ['thinkingBudget' => 2048]);
+});
+
+it('leaves Gemini thinking at the model default when neither control is set', function (): void {
     Http::fake(['*' => Http::response(geminiReply())]);
 
     (new GeminiClient(compatibleConfig(['thinking_budget' => '']), 'gemini-3.7-flash'))->generate('p');

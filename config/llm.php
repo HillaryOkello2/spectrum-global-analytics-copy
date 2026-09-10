@@ -46,11 +46,13 @@ return [
             'max_tokens' => (int) env('LLM_MAX_TOKENS', 32000),
             'timeout' => (int) env('LLM_TIMEOUT', 600),
             // Gemini thinks by default and pays for it out of maxOutputTokens,
-            // like DeepSeek and Kimi. gemini-3.7-flash cannot switch it off, so
-            // it is capped instead: at most this many tokens of thinking, the
-            // rest of max_tokens left for the document. Empty = the model's
-            // own default, uncapped. See GeminiClient::thinkingOptions().
-            'thinking_budget' => env('GEMINI_THINKING_BUDGET', 2048),
+            // like DeepSeek and Kimi. Which control works depends on the model:
+            // 3.6-flash takes thinkingLevel "minimal" (thinking fully off) but
+            // rejects a budget of 0; 3.7-flash rejects "minimal", ignores a
+            // budget of 0, and honours only a positive budget as a cap. The
+            // level wins when both are set. See GeminiClient::thinkingOptions().
+            'thinking_level' => env('GEMINI_THINKING_LEVEL', 'minimal'),
+            'thinking_budget' => env('GEMINI_THINKING_BUDGET'),
         ],
         'openai' => [
             'client' => 'openai-compatible',

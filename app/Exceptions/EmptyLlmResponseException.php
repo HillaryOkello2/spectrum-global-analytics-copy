@@ -29,7 +29,7 @@ class EmptyLlmResponseException extends RuntimeException
         // Raising the ceiling is the wrong advice when reasoning ate it: Claude
         // Sonnet 5 given 32,000 tokens simply thought for four minutes longer.
         $because = match (true) {
-            $ceiling && $reasoningTokens > 0 => " — it spent {$reasoningTokens} tokens reasoning and hit the max_tokens ceiling before writing any text. Turn the provider's reasoning off or cap it (DEEPSEEK_THINKING, MOONSHOT_THINKING, GEMINI_THINKING_BUDGET) rather than raising LLM_MAX_TOKENS.",
+            $ceiling && $reasoningTokens > 0 => " — it spent {$reasoningTokens} tokens reasoning and hit the max_tokens ceiling before writing any text. Turn the provider's reasoning off or cap it (DEEPSEEK_THINKING, MOONSHOT_THINKING, GEMINI_THINKING_LEVEL) rather than raising LLM_MAX_TOKENS.",
             $ceiling => ' — the response hit the max_tokens ceiling before any text was produced. On a reasoning model, turn its reasoning off; otherwise raise LLM_MAX_TOKENS.',
             $stopReason === null => '.',
             default => " (stop reason: {$stopReason}).",

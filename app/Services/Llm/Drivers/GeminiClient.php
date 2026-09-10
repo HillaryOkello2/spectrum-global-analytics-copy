@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Http;
 class GeminiClient implements LlmClient
 {
     /**
-     * @param  array{base_url: string, api_key: ?string, timeout?: int, max_tokens?: int, thinking_budget?: int|string|null}  $config
+     * @param  array{base_url: string, api_key: ?string, timeout?: int, max_tokens?: int, thinking_level?: ?string, thinking_budget?: int|string|null}  $config
      */
     public function __construct(
         private readonly array $config,
@@ -52,20 +52,27 @@ class GeminiClient implements LlmClient
 
     /**
      * Gemini's thinking comes out of maxOutputTokens: given a 40-token ceiling,
-     * gemini-3.7-flash spent 36 thinking and returned no text at all. So it is
-     * capped, leaving the rest of the budget for the document.
+     * gemini-3.7-flash spent 36 thinking and returned no text at all.
      *
-     * Capped rather than switched off, because 3.7-flash has no off: a budget
-     * of 0 is accepted and ignored (105 thinking tokens on a one-line sum) and
-     * thinkingLevel "minimal" is rejected with a 400. A positive budget is
-     * honoured — 32 produced 34. Older flash models do go to zero on a budget
-     * of 0 (2.5-flash), so 0 is still passed through when configured. Empty
-     * leaves the model's own default.
+     * The control that works differs by model, so both are configurable and
+     * the level wins when both are set:
+     * - thinkingLevel "minimal" switches thinking fully off on 3.5/3.6-flash;
+     *   3.7-flash rejects it with a 400.
+     * - thinkingBudget 0 switches it off on 2.5-flash, is ignored by 3.7-flash
+     *   (105 thinking tokens on a one-line sum) and rejected by 3.6-flash. A
+     *   positive budget is honoured as a cap on 3.7-flash (32 produced 34).
+     * Neither set leaves the model's own default.
      *
      * @return array<string, mixed>
      */
     private function thinkingOptions(): array
     {
+        $level = $this->config['thinking_level'] ?? null;
+
+        if ($level !== null && $level !== '') {
+            return ['thinkingConfig' => ['thinkingLevel' => $level]];
+        }
+
         $budget = $this->config['thinking_budget'] ?? null;
 
         if ($budget === null || $budget === '') {
