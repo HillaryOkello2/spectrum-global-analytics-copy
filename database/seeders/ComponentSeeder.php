@@ -25,7 +25,7 @@ class ComponentSeeder extends Seeder
      * supplied by the system and appear in neither list.
      *
      * The Component→LLM mapping is still not specified by the client
-     * (Assumptions §21, open question) — assigned round-robin as a placeholder.
+     * (Assumptions §21, open question) — see PROVIDERS.
      */
     public const COMPONENTS = [
         [
@@ -125,14 +125,35 @@ class ComponentSeeder extends Seeder
         ],
     ];
 
+    /**
+     * Which model writes — and, by FR-26, audits — each component.
+     *
+     * The client has not specified this (Assumptions §21, open question). It
+     * used to be round-robin; it is now set from observed output. MF and HM
+     * moved off GPT-4o on 2026-09-11: for both it produced short, generic
+     * documents with padded or broken sentences, no named actors and missing
+     * structure, and an independent audit failed every section of each.
+     */
+    public const PROVIDERS = [
+        'DB' => 'anthropic',
+        'WH' => 'gemini',
+        'MF' => 'deepseek',
+        'CC' => 'deepseek',
+        'ES' => 'moonshot',
+        'BS' => 'minimax',
+        'RP' => 'anthropic',
+        'WP' => 'gemini',
+        'HM' => 'moonshot',
+    ];
+
     public function run(): void
     {
-        $providerIds = LlmProvider::orderBy('id')->pluck('id')->all();
+        $providerIds = LlmProvider::pluck('id', 'driver')->all();
 
-        // QC.txt is the client's SGA-QCP-v2, edited (2026-09-07/08) so that it
-        // audits the document the generation prompts actually specify. As
-        // supplied it was calibrated to a different schema and failed every
-        // draft on four points none of the nine product prompts ask for:
+        // QC.txt is the client's SGA-QCP-v2, edited so that it audits the
+        // document the generation prompts actually specify. As supplied it was
+        // calibrated to a different schema and failed every draft on points
+        // none of the nine product prompts ask for:
         //
         //   - the `SGA.P1`-`SGA.P12` pillar taxonomy (Section 6, and the vector
         //     codes in 2.1/4.2) — the prompts specify First/Second/Third Order
@@ -143,17 +164,19 @@ class ComponentSeeder extends Seeder
         //   - six subscriber-tier advisories in Section 7 — the prompts specify
         //     three: Primary, Secondary, Third Tier ("third tier" being the
         //     third order of consequence, not subscriber tier three)
+        //   - "end cleanly after Product Information" (2026-09-11) — every
+        //     prompt places Section 10 after Product Information
         //
         // Everything else, including the whole verdict mechanism, is verbatim.
-        $qaPrompt = self::promptFile('QC');
-
+        // The Daily Brief is audited against QC-DB.txt instead — see
+        // qaPromptFor().
         foreach (self::COMPONENTS as $index => $component) {
             Component::updateOrCreate(['code' => $component['code']], [
                 ...$component,
                 'prompt_template' => self::productPrompt($component),
                 'topic_prompt' => self::topicPrompt($component),
-                'qa_prompt_template' => $qaPrompt,
-                'assigned_llm_provider_id' => $providerIds === [] ? null : $providerIds[$index % count($providerIds)],
+                'qa_prompt_template' => self::qaPromptFor($component['code']),
+                'assigned_llm_provider_id' => $providerIds[self::PROVIDERS[$component['code']]] ?? null,
                 'is_transactional' => false,
                 'queue_name' => 'llm-'.strtolower($component['code']),
                 'sort_order' => $index + 1,
@@ -171,13 +194,32 @@ class ComponentSeeder extends Seeder
     }
 
     /**
-     * The product prompt, with its metadata block turned into slots we can fill.
+     * The QA protocol a component is audited against: its own `QC-{code}.txt`
+     * when one exists, the shared QC.txt otherwise.
+     *
+     * The shared protocol's strategic-only filter (§1) and decadal horizon (§5)
+     * are right for eight of the nine products and impossible for the Daily
+     * Brief, whose own prompt requires a 24-hour body: every Daily Brief ever
+     * audited failed on exactly those two sections, under two different
+     * auditors. QC-DB.txt keeps every other check and replaces those two,
+     * judging tactical detail with the Necessity Test from SGA-QCP-v2.4.
+     */
+    public static function qaPromptFor(string $code): string
+    {
+        $own = database_path("seeders/prompts/QC-{$code}.txt");
+
+        return is_file($own) ? file_get_contents($own) : self::promptFile('QC');
+    }
+
+    /**
+     * The product prompt, with its metadata block turned into slots we can
+     * fill and the output checklist appended.
      *
      * @param  array<string, mixed>  $component
      */
     public static function productPrompt(array $component): string
     {
-        return self::normaliseMetadataBlock(
+        $prompt = self::normaliseMetadataBlock(
             self::promptFile($component['code']),
             [
                 ...$component['variables'],
@@ -186,6 +228,36 @@ class ComponentSeeder extends Seeder
                 'DATE',
             ],
         );
+
+        return rtrim($prompt)."\n\n".self::outputChecklist();
+    }
+
+    /**
+     * Restates, as a closing checklist, requirements every prompt already sets
+     * out but models were skipping — in audits on 2026-09-11 two Daily Briefs
+     * and a Monthly Focus omitted the Table of Contents, a Crisis Simulation
+     * ended with a sign-off paragraph, and documents padded paragraphs with
+     * filler to reach the exact word counts. It adds no requirement of its own:
+     * the prompt files stay verbatim, this is appended at seed time.
+     *
+     * No bracketed tokens — PromptRenderer would treat them as placeholders.
+     */
+    private static function outputChecklist(): string
+    {
+        return <<<'CHECKLIST'
+        ======================================================================
+        OUTPUT CHECKLIST — confirm each point before you finish
+        ======================================================================
+        1. Open with the cover block exactly as laid out in PART I: the SGA name and tagline, the product line, the title lines, the attribution statement, then the DOCUMENT REFERENCE and DATE.
+        2. Reproduce the TABLE OF CONTENTS in full, immediately before Section 1 of PART I. It is part of the product, not an illustration.
+        3. Write PART I and then PART II in exactly the sections and subsections specified above, in order, with nothing omitted and nothing added.
+        4. Name the real states, institutions, systems and places your analysis relies on. Do not substitute generic phrasing such as "a major economy" or "central banks" for a specific actor you are drawing on.
+        5. You have no access to data from the current reporting period. Do not state today's, this week's or this month's specific figures (tonnages, prices, auction results, counts, percentages) as fact. Name the real actors, describe the pattern, and set out its structural meaning.
+        6. Meet each paragraph length with substance. Never pad a sentence with filler adverbs, stacked qualifiers or invented words to reach a word count.
+        7. Every specific figure, date, place, force or market move must serve a structural or strategic claim made in the same paragraph. Do not string data points together as a news recap.
+        8. Do not reproduce this prompt's instructions in the document: no word-count notes, no "STRICT RULE" lines, and no production headings such as "EXPLICIT ABSTRACT PAPER GENERATION".
+        9. Stop after the last section specified for PART II. No closing summary, sign-off or commentary.
+        CHECKLIST;
     }
 
     /**
