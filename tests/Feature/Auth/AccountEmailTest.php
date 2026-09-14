@@ -23,7 +23,6 @@ function newStaffPayload(array $overrides = []): array
         'phone' => '+254733112233',
         'country' => 'Kenya',
         'email' => 'grace@example.com',
-        'password' => 'Str0ngPassword!',
         'roles' => [User::ADMIN],
         ...$overrides,
     ];
@@ -43,28 +42,62 @@ function breakMail(): void
     ]);
 }
 
-it('emails a new staff member their sign-in details', function (): void {
+it('emails a new staff member a generated password', function (): void {
     Notification::fake();
 
     $this->actingAs(mailTestAdmin())
         ->postJson(route('api.admin.users.store'), newStaffPayload())
         ->assertCreated()
-        ->assertJsonPath('meta.accountEmailSent', true);
+        ->assertJsonPath('meta.accountEmailSent', true)
+        // Emailed, so it is never handed to the admin as well.
+        ->assertJsonMissingPath('meta.temporaryPassword');
 
     $user = User::where('email', 'grace@example.com')->firstOrFail();
+    $password = null;
 
-    Notification::assertSentTo($user, AccountCreated::class, function (AccountCreated $notification) use ($user): bool {
+    Notification::assertSentTo($user, AccountCreated::class, function (AccountCreated $notification) use ($user, &$password): bool {
         $mail = $notification->toMail($user);
         $text = html_entity_decode(strip_tags((string) $mail->render()), ENT_QUOTES | ENT_HTML5);
 
+        preg_match('/Temporary password:\s*(\S+)/', $text, $match);
+        $password = $match[1] ?? null;
+
         return str_contains($text, 'grace@example.com')
-            && str_contains($text, 'Str0ngPassword!')
             // Staff sign in to the admin app, not the subscriber one.
             && $mail->actionUrl === config('frontend.admin_url').config('frontend.paths.login');
     });
 
+    // The password in the email is the one that works.
+    expect($password)->toBeString()
+        ->and(Hash::check($password, $user->password))->toBeTrue();
+
     // Only the new user — never the admin who created the account.
     Notification::assertSentTimes(AccountCreated::class, 1);
+});
+
+it('never takes a password from the admin, ignoring one sent anyway', function (): void {
+    Notification::fake();
+
+    $this->actingAs(mailTestAdmin())
+        ->postJson(route('api.admin.users.store'), newStaffPayload(['password' => 'Str0ngPassword!']))
+        ->assertCreated();
+
+    $user = User::where('email', 'grace@example.com')->firstOrFail();
+
+    expect(Hash::check('Str0ngPassword!', $user->password))->toBeFalse();
+});
+
+it('leaves no account behind when the roles are refused', function (): void {
+    Notification::fake();
+
+    // A plain admin may not create a System Admin.
+    $this->actingAs(mailTestAdmin())
+        ->postJson(route('api.admin.users.store'), newStaffPayload(['roles' => [User::SYSTEM_ADMIN]]))
+        ->assertForbidden()
+        ->assertJsonPath('code', 'role_escalation');
+
+    expect(User::where('email', 'grace@example.com')->exists())->toBeFalse();
+    Notification::assertNothingSent();
 });
 
 it('shows the password exactly as set, markdown characters and all', function (): void {
@@ -80,16 +113,20 @@ it('shows the password exactly as set, markdown characters and all', function ()
     expect(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5))->toContain($password);
 });
 
-it('still creates the account when the email cannot be sent', function (): void {
+it('hands the admin the generated password when the email cannot be sent', function (): void {
     breakMail();
 
-    $this->actingAs(mailTestAdmin())
+    $response = $this->actingAs(mailTestAdmin())
         ->postJson(route('api.admin.users.store'), newStaffPayload())
         ->assertCreated()
-        // The admin needs to know, so they can pass the password on themselves.
+        // The admin needs to know, and needs the password to pass on themselves.
         ->assertJsonPath('meta.accountEmailSent', false);
 
-    expect(User::where('email', 'grace@example.com')->exists())->toBeTrue();
+    $user = User::where('email', 'grace@example.com')->firstOrFail();
+    $password = $response->json('meta.temporaryPassword');
+
+    expect($password)->toBeString()
+        ->and(Hash::check($password, $user->password))->toBeTrue();
 });
 
 it('lets a staff member change their own password', function (): void {

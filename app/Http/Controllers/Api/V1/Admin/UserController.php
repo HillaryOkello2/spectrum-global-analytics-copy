@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
-use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreUserRequest;
 use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
-use App\Services\Access\AccountMailer;
+use App\Services\Access\StaffAccountService;
 use App\Services\Access\UserAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -22,7 +21,7 @@ class UserController extends Controller
 {
     public function __construct(
         private readonly UserAccessService $access,
-        private readonly AccountMailer $mailer,
+        private readonly StaffAccountService $accounts,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -38,28 +37,28 @@ class UserController extends Controller
     }
 
     /**
-     * Create a staff account and email the new user their sign-in details.
+     * Create a staff account. The password is generated, not chosen by the
+     * admin, and emailed to the new user with their sign-in details.
      *
      * `meta.accountEmailSent` reports whether that email went out. When it is
-     * false the account still exists, and the admin has to pass the password
-     * on some other way.
+     * false the account still exists, and `meta.temporaryPassword` carries the
+     * generated password, this once, for the admin to pass on some other way.
      */
     public function store(StoreUserRequest $request): UserResource
     {
-        $user = User::create([
-            ...$request->safe()->except('roles'),
-            'status' => UserStatus::Active,
-        ]);
+        $account = $this->accounts->create(
+            $request->safe()->except('roles'),
+            $request->validated('roles'),
+            $request->user(),
+        );
 
-        activity()->causedBy($request->user())->performedOn($user)->log('admin user created');
+        $meta = ['accountEmailSent' => $account->emailed];
 
-        $user = $this->access->syncRoles($user, $request->validated('roles'), $request->user());
+        if ($account->temporaryPassword !== null) {
+            $meta['temporaryPassword'] = $account->temporaryPassword;
+        }
 
-        // After the roles are synced: the sign-in link is addressed to the
-        // admin or subscriber app according to them.
-        $emailed = $this->mailer->sendAccountCreated($user, $request->validated('password'));
-
-        return (new UserResource($user))->additional(['meta' => ['accountEmailSent' => $emailed]]);
+        return (new UserResource($account->user))->additional(['meta' => $meta]);
     }
 
     public function show(User $user): UserResource

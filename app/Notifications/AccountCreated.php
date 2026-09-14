@@ -9,7 +9,7 @@ use Illuminate\Support\HtmlString;
 
 /**
  * Sent to a staff member when an admin creates their account, carrying the
- * password the admin set so they can sign in and then change it.
+ * password generated for them so they can sign in and then change it.
  *
  * Deliberately not queued: QUEUE_CONNECTION is `database` and no worker runs
  * that queue for mail, so a queued notification would sit in `jobs` and the

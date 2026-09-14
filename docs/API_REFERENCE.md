@@ -915,12 +915,14 @@ So a role granting only `access admin portal` + `proofread products` can reach t
 | GET | `/admin/users/{user}` | One user. |
 | PATCH | `/admin/users/{user}` | Update a user. |
 
-**POST body:** `first_name`, `last_name`, `phone`, `country`, `email` (unique), `password`, `roles` (array of role names, ≥1 — any staff role, e.g. `["admin"]` or a custom `["Proofreader"]`). Returns `201`. The account is created `active`, with no subscription.
+**POST body:** `first_name`, `last_name`, `phone`, `country`, `email` (unique), `roles` (array of role names, ≥1 — any staff role, e.g. `["admin"]` or a custom `["Proofreader"]`). **No password** — the backend generates one; a `password` field sent anyway is ignored. Returns `201`. The account is created `active`, with no subscription.
 
-The new user is **emailed their sign-in details** — their email, the password you set, and a link to
-the admin portal's sign-in page — and asked to change the password once signed in
+The new user is **emailed their sign-in details** — their email, the generated temporary password,
+and a link to the admin portal's sign-in page — and asked to change the password once signed in
 (`PUT /me/password`). The response carries **`meta.accountEmailSent`**: `true` if the email went out,
-`false` if mail failed. On `false` the account still exists; pass the password on another way.
+`false` if mail failed. On `false` the account still exists and **`meta.temporaryPassword`** carries
+the generated password — shown to the admin this once, to pass on another way. It is absent whenever
+the email was sent.
 **PATCH body (all optional):** `first_name`, `last_name`, `phone`, `country`, `status` (UserStatus), `roles` (array).
 **Response:** `UserResource` (see `GET /me` shape). `{user}` = user `publicId`.
 

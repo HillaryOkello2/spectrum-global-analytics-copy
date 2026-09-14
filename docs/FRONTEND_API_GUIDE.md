@@ -142,8 +142,10 @@ nested inside a product payload.
 ### Admin Portal (token, role `admin` / `System Admin`)
 - Users: `GET/POST /admin/users`, `GET/PATCH /admin/users/{user}`,
   `GET/PUT /admin/users/{user}/roles`, `GET/PUT /admin/users/{user}/permissions`.
-  `POST` emails the new user their sign-in details (email, the password set, admin sign-in link).
-  Check **`meta.accountEmailSent`** — if `false`, mail failed and the admin must share the password.
+  `POST` takes **no password** — drop that field from the create-user form. The backend generates
+  one and emails it to the new user with their admin sign-in link. Check **`meta.accountEmailSent`**:
+  if `false`, mail failed and **`meta.temporaryPassword`** holds the generated password for the admin
+  to share — show it once; it is never returned when the email went out.
   **Staff accounts only** — a subscriber `publicId` here returns `404`, and `subscriber` is not an
   assignable role (`422`). Subscribers live under `/admin/subscribers`.
 - Roles: full CRUD at `/admin/roles` (`{role}` is the role **name**, URL-encoded) plus
