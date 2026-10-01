@@ -16,7 +16,17 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             ->only('index')->names('catalog.components.products');
         Route::apiResource('tiers', Public\TierController::class)->only('index');
         Route::get('products/{product}/preview', Public\ProductPreviewController::class)->name('products.preview');
+
+        // Public, because a paid signup has no token until its payment
+        // succeeds. The payment's UUID is the only key (§18.3).
+        Route::get('payments/{payment}/status', Public\Payments\PaymentStatusController::class)->name('payments.status');
     });
+
+    // Each retry can send an M-Pesa prompt, so it gets a tighter limit on its
+    // own counter (the prefix), not one shared with status polling.
+    Route::post('payments/{payment}/retry', Public\Payments\RetryPaymentController::class)
+        ->middleware('throttle:5,1,payment-retry')
+        ->name('payments.retry');
 
     Route::middleware('throttle:10,1')->group(function (): void {
         Route::post('auth/register', [Public\Auth\RegisteredUserController::class, 'store'])->name('auth.register');
@@ -54,7 +64,6 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             Route::apiSingleton('products.rating', Subscriber\ProductRatingController::class)
                 ->destroyable()
                 ->only(['show', 'update', 'destroy']);
-            Route::get('payments/{payment}/status', Subscriber\PaymentStatusController::class)->name('payments.status');
         });
 
         // Admin portal (FR-38..46). Entry is permission-based, not role-based, so

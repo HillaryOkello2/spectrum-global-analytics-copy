@@ -3,25 +3,21 @@
 namespace App\Services\Billing;
 
 use App\Enums\PaymentMethod;
-use App\Enums\PaymentStatus;
 use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\InvalidTierChangeException;
 use App\Exceptions\Domain\SubscriptionNotActiveException;
 use App\Exceptions\Domain\TierNotPurchasableException;
-use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\Billing\DTOs\SubscriptionChangeResult;
-use App\Services\Payments\Contracts\PaymentGateway;
+use App\Services\Payments\PaymentInitiator;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class SubscriptionChangeService
 {
     public function __construct(
-        private readonly PaymentGateway $gateway,
+        private readonly PaymentInitiator $payments,
     ) {}
 
     /**
@@ -115,25 +111,12 @@ class SubscriptionChangeService
         Model $payable,
         PaymentMethod $method,
     ): SubscriptionChangeResult {
-        $payment = DB::transaction(fn (): Payment => $subscription->payments()->create([
-            'user_id' => $user->id,
-            'payable_type' => $payable::class,
-            'payable_id' => $payable->id,
-            'method' => $method,
-            'amount' => $tier->price,
-            'currency' => $tier->currency,
-            'status' => PaymentStatus::Pending,
-            'gateway' => config('payments.gateway'),
-            'idempotency_key' => (string) Str::uuid(),
-        ]));
-
-        $initiation = $this->gateway->initiate($payment);
-        $payment->update(['gateway_ref' => $initiation->gatewayRef]);
+        $started = $this->payments->start($user, $subscription, $payable, $tier, $method);
 
         return new SubscriptionChangeResult(
             subscription: $subscription,
-            payment: $payment,
-            paymentInitiation: $initiation,
+            payment: $started->payment,
+            paymentInitiation: $started->initiation,
         );
     }
 }

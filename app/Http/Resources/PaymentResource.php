@@ -12,9 +12,15 @@ class PaymentResource extends JsonResource
         return [
             'publicId' => $this->public_id,
             'method' => $this->method->value,
+            // What the payer is charged, in the currency they pay in...
             'amount' => $this->amount,
             'currency' => $this->currency,
+            // ...and the tier price it was converted from. The same as amount
+            // and currency when nothing was converted.
+            'listAmount' => $this->list_amount ?? $this->amount,
+            'listCurrency' => $this->list_currency ?? $this->currency,
             'status' => $this->status->value,
+            'failureReason' => $this->failure_reason?->value,
             'paidAt' => $this->paid_at?->format('Y-m-d H:i:s'),
         ];
     }

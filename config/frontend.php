@@ -24,6 +24,8 @@ return [
     'paths' => [
         'login' => env('FRONTEND_LOGIN_PATH', '/login'),
         'reset_password' => env('FRONTEND_RESET_PASSWORD_PATH', '/reset-password'),
+        // Where PGW's card checkout returns the payer; the page polls the payment.
+        'payment_return' => env('FRONTEND_PAYMENT_RETURN_PATH', '/payment/return'),
     ],
 
 ];

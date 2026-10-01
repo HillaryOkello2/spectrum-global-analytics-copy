@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PaymentFailureReason;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Traits\HasPublicId;
@@ -22,11 +23,17 @@ class Payment extends Model
         'payable_type',
         'payable_id',
         'method',
+        'phone',
         'amount',
         'currency',
+        'list_amount',
+        'list_currency',
+        'exchange_rate',
         'status',
+        'failure_reason',
         'gateway',
         'gateway_ref',
+        'transaction_code',
         'idempotency_key',
         'raw_callback',
         'paid_at',
@@ -37,7 +44,10 @@ class Payment extends Model
         return [
             'method' => PaymentMethod::class,
             'status' => PaymentStatus::class,
+            'failure_reason' => PaymentFailureReason::class,
             'amount' => 'decimal:2',
+            'list_amount' => 'decimal:2',
+            'exchange_rate' => 'decimal:4',
             'raw_callback' => 'array',
             'paid_at' => 'datetime',
         ];
@@ -69,10 +79,22 @@ class Payment extends Model
     }
 
     /**
+     * Pending past the payment timeout. PGW calls back on success only, so
+     * these are declined or ignored prompts no callback will ever settle.
+     */
+    public function scopeStale(Builder $query): Builder
+    {
+        return $query
+            ->where('status', PaymentStatus::Pending)
+            ->where('created_at', '<', now()->subMinutes((int) config('payments.pending_timeout')));
+    }
+
+    /**
      * Filters for the admin transaction history (FR-42).
      *
-     * `search` covers the gateway reference and the payer's name/email — the two
-     * things support is given when someone asks "where did my money go".
+     * `search` covers the gateway reference, the gateway's transaction code (the
+     * M-Pesa receipt) and the payer's name/email: the things support is given
+     * when someone asks "where did my money go".
      *
      * @param  array<string, mixed>  $filters
      */
@@ -82,6 +104,7 @@ class Payment extends Model
             ->when($filters['search'] ?? null, function (Builder $q, string $search) {
                 $q->where(function (Builder $q) use ($search) {
                     $q->where('gateway_ref', 'like', "%{$search}%")
+                        ->orWhere('transaction_code', 'like', "%{$search}%")
                         ->orWhereHas('user', fn (Builder $q) => $q->where(
                             fn (Builder $q) => $q->where('first_name', 'like', "%{$search}%")
                                 ->orWhere('last_name', 'like', "%{$search}%")

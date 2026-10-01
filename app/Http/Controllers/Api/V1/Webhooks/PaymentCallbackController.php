@@ -18,6 +18,10 @@ class PaymentCallbackController extends Controller
      */
     public function __invoke(Request $request, PaymentCallbackHandler $handler): JsonResponse
     {
+        // Only the configured gateway is listening. A callback addressed to
+        // another one, such as a stray /fake while PGW is live, isn't ours.
+        abort_unless($request->route('gateway') === config('payments.gateway'), 404);
+
         $payment = $handler->handle($request);
 
         return response()->json([

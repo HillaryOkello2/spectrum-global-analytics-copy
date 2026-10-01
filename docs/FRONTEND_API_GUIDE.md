@@ -9,6 +9,17 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ⚠️ Changed: payments go through PGW (2026-09-14)
+
+- **Paid amounts are now KES** with PGW: `payment.amount`/`currency` is what's charged, and the new
+  `listAmount`/`listCurrency` is the USD tier price. `GET /tiers` adds `charge` for the KES figure.
+- **`GET /payments/{payment}/status` needs no token** any more (it still works with one), and there
+  is a new **`POST /payments/{payment}/retry`**. A paid signup can finally learn its outcome.
+- Card payments return **`instructions.checkoutUrl`**, and PGW sends the payer back to a new
+  subscriber-portal page, **`/payment/return?payment={publicId}`**, which the portal needs to build.
+- Payments gained **`failureReason`**; the `payment_pending` login error now carries `meta.payment`.
+- M-Pesa (the default) now requires a **Kenyan mobile**, or `422`. See [Payments](#payments-frontend-flow).
+
 ## ⚠️ Breaking: component codes changed (2026-08-25)
 
 The client's finalised prompt pack replaced the placeholder `A1`–`A9` codes with the nine real
@@ -62,6 +73,7 @@ Token-based (Laravel Sanctum). Flow:
 
 Login edge cases (both HTTP 403, distinguish by `code`):
 - `payment_pending` — registered but payment not completed; send them back to the payment step.
+  `meta.payment` is their latest payment, to poll or retry.
 - `account_suspended` — blocked by an admin.
 
 A subscriber token only opens Subscriber endpoints; an admin token only opens Admin endpoints (403 otherwise).
@@ -87,6 +99,7 @@ Domain `code` values you should handle in the UI:
 - `quota_exhausted` (403) — metered limit hit; response includes `meta: { used, limit, access }`. Show an upgrade prompt.
 - `subscription_not_active` (403) — no active subscription.
 - `invalid_task_transition` (409) — admin task board action not allowed from the current state.
+- `payment_not_retryable` (409) — the payment is pending or paid, or a newer attempt exists.
 - `payment_pending` / `account_suspended` (403) — login states above.
 
 ## The four areas
@@ -134,7 +147,7 @@ nested inside a product payload.
   - The `meta.used`/`meta.limit` on a successful metered read lets you show "3 of 10 this month"
     without a second call. Metering is **per component per calendar month**; components no longer
     repeat, so there is exactly one A1.
-- `GET /payments/{payment}/status` — poll after initiating a paid action (status: `pending`→`successful`/`failed`).
+- Payment status and retry are public (no token): see Payments below.
 - `GET`/`PUT`/`DELETE /products/{product}/rating` — the subscriber's own 1–5 star rating. `PUT` is
   `403` unless they can actually read the product, so show the star control only when the product
   came back with `locked: false` or `redacted: true`.
@@ -156,8 +169,8 @@ nested inside a product payload.
 - Subscribers: `GET /admin/subscribers?search=&status=&tier=`, `GET/PATCH /admin/subscribers/{subscriber}`.
 - Audit log: `GET /admin/audit-logs?description=&from=&to=`.
 - Transaction history: `GET /admin/transactions?search=&status=&method=&gateway=&subscriber=&from=&to=`,
-  `GET /admin/transactions/{transaction}`. Every payment with its payer, gateway reference and
-  invoice. Includes pending and failed ones. Needs the `view transaction history` permission.
+  `GET /admin/transactions/{transaction}`. Every payment with its payer, gateway reference, M-Pesa
+  transaction code and invoice; `search` matches the transaction code too. Includes pending and failed ones. Needs the `view transaction history` permission.
 - Analytics: `GET /admin/analytics/summary`, `/subscriptions-by-tier`, `/products-by-component`,
   `/subscribers-by-location`, `/most-read-products?from=&to=&limit=`, `/product-ratings`,
   `/rejections`. All behind `view analytics`.
@@ -186,15 +199,31 @@ nested inside a product payload.
 
 ## Payments (frontend flow)
 
-The real gateway (PGW) isn't wired yet — a fake driver runs locally so the flow is fully testable:
+Production uses PGW (M-Pesa STK push or a hosted card page); a fake driver stands in locally.
 
-1. Register on a paid tier → you get `payment.publicId` + `instructions`.
-2. In local/UAT, "paying" = the gateway calling the webhook. To simulate success in dev, POST to
-   `/api/v1/webhooks/payments/fake` with `{ "gateway_ref": "<the payment's gatewayRef>", "result": "success" }`.
-3. Poll `GET /payments/{payment}/status` until `successful`, then the account is active and the user can log in.
+1. Register on a paid tier (or renew / upgrade) → `payment` + `instructions`.
+   - `instructions.type: "mpesa"` → show `instructions.message`; the payer approves on their phone.
+   - `instructions.type: "card"` → send the browser to `instructions.checkoutUrl`. PGW returns the payer
+     to **`/payment/return?payment={publicId}`** on the subscriber portal. Build that page: it only
+     polls, since the redirect itself settles nothing.
+2. Poll **`GET /payments/{publicId}/status`** — **no token needed**, because a paid signup has none yet —
+   every 3–5 seconds until `successful` (the signup can now log in) or `failed`.
+3. On `failed`, show `failureReason` (`declined`, `expired`, `gateway_error`, `amount_mismatch`) and offer
+   **`POST /payments/{publicId}/retry`** (optional `payment_method` to switch to card, optional `phone`).
+   It returns a **new** payment: poll that one. An unanswered M-Pesa prompt turns `failed`/`expired`
+   after the timeout (30 minutes by default), because PGW never reports it.
+4. A pending user who logs in gets `403 payment_pending` with `meta.payment`: resume from step 2 or 3.
 
-When PGW is integrated the `instructions` payload will carry the real STK-push / card-checkout details;
-the poll-then-login flow stays the same.
+Money fields: `amount`/`currency` are what's charged (KES with PGW); `listAmount`/`listCurrency` are the
+USD tier price. `GET /tiers` carries `charge: { amount, currency }` when the two differ, so the pricing
+page can show "≈ KES 6,449" before M-Pesa does.
+
+M-Pesa, the default method, needs a Kenyan mobile (`07…`, `01…`, `+254…`); anything else is `422`, so
+offer card instead.
+
+To simulate the gateway in dev, POST to `/api/v1/webhooks/payments/fake` with
+`{ "gateway_ref": "<the payment's gatewayRef>", "result": "success" }` (`"failed"` for a decline). The
+`gatewayRef` is on `GET /admin/transactions`.
 
 ## Local base URL
 

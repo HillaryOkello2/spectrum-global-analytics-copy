@@ -29,7 +29,8 @@ class UserFactory extends Factory
             'first_name' => fake()->firstName(),
             'last_name' => fake()->lastName(),
             'email' => fake()->unique()->safeEmail(),
-            'phone' => fake()->e164PhoneNumber(),
+            // A Kenyan mobile: M-Pesa, the default payment method, can prompt no other.
+            'phone' => '+2547'.fake()->numerify('########'),
             'country' => fake()->country(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),

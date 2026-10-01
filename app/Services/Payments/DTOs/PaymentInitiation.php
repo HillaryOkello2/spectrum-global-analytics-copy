@@ -5,12 +5,11 @@ namespace App\Services\Payments\DTOs;
 readonly class PaymentInitiation
 {
     /**
-     * @param  string  $gatewayRef  Gateway-side reference for the transaction.
-     * @param  array<string, mixed>  $instructions  Frontend instructions: checkout URL,
-     *                                              STK push status, etc.
+     * @param  array<string, mixed>  $instructions  What the frontend shows next: the
+     *                                              M-Pesa prompt message, or a card
+     *                                              `checkoutUrl`.
      */
     public function __construct(
-        public string $gatewayRef,
         public array $instructions = [],
     ) {}
 }

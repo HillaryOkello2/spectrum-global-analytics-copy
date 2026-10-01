@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Services\Access\FrontendLinks;
 use App\Services\Payments\Contracts\PaymentGateway;
 use App\Services\Payments\FakeGatewayDriver;
+use App\Services\Payments\PgwGatewayDriver;
+use Illuminate\Support\Arr;
 use Illuminate\Support\ServiceProvider;
 use InvalidArgumentException;
 
@@ -16,9 +19,37 @@ class PaymentServiceProvider extends ServiceProvider
 
             return match ($driver) {
                 'fake' => new FakeGatewayDriver,
-                // 'pgw' => new PgwGatewayDriver(config('payments.pgw')), — pending PGW API docs
+                'pgw' => new PgwGatewayDriver($this->pgwConfig(), $app->make(FrontendLinks::class)),
                 default => throw new InvalidArgumentException("Unsupported payment gateway [{$driver}]."),
             };
         });
+    }
+
+    /**
+     * Refuse to build the driver when a setting is missing, rather than
+     * discover it halfway through someone's payment.
+     *
+     * @return array<string, mixed>
+     */
+    private function pgwConfig(): array
+    {
+        $config = config('payments.pgw');
+
+        $required = ['base_url', 'merchant_key', 'merchant_secret', 'account_id', 'callback_key', 'callback_secret'];
+        $missing = array_keys(array_filter(Arr::only($config, $required), fn ($value) => blank($value)));
+
+        if ($missing !== []) {
+            throw new InvalidArgumentException(
+                'PGW is missing configuration: '.implode(', ', $missing).'. See the PGW_* keys in .env.example.',
+            );
+        }
+
+        if (strtoupper((string) config('payments.charge_currency')) !== 'KES') {
+            throw new InvalidArgumentException(
+                'PGW charges KES: set PAYMENT_CHARGE_CURRENCY=KES and PAYMENT_USD_KES_RATE.',
+            );
+        }
+
+        return $config;
     }
 }

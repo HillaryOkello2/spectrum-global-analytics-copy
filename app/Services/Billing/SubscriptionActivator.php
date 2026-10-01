@@ -26,11 +26,13 @@ class SubscriptionActivator
      *  - subscription never started yet  → signup:  activate, fresh monthly term.
      *  - subscription already started    → renewal: extend the same tier by a month.
      */
-    public function activate(Payment $payment, array $rawCallback = []): void
+    public function activate(Payment $payment, array $rawCallback = [], ?string $transactionCode = null): void
     {
-        DB::transaction(function () use ($payment, $rawCallback): void {
+        DB::transaction(function () use ($payment, $rawCallback, $transactionCode): void {
             $payment->update([
                 'status' => PaymentStatus::Successful,
+                'failure_reason' => null,
+                'transaction_code' => $transactionCode ?? $payment->transaction_code,
                 'raw_callback' => $rawCallback,
                 'paid_at' => now(),
             ]);
@@ -99,10 +101,30 @@ class SubscriptionActivator
             'issue_date' => today(),
             'line_items' => [
                 [
-                    'description' => trim($tierName.' subscription (monthly)'),
+                    'description' => trim($tierName.' subscription (monthly)').$this->conversionNote($payment),
                     'amount' => (string) $payment->amount,
                 ],
             ],
         ]);
+    }
+
+    /**
+     * A converted charge names the list price it came from, so the invoice
+     * shows both what was paid and what the tier costs.
+     */
+    private function conversionNote(Payment $payment): string
+    {
+        if ($payment->exchange_rate === null) {
+            return '';
+        }
+
+        return sprintf(
+            ', %s %s at %s %s per %s',
+            $payment->list_currency,
+            $payment->list_amount,
+            $payment->currency,
+            rtrim(rtrim((string) $payment->exchange_rate, '0'), '.'),
+            $payment->list_currency,
+        );
     }
 }

@@ -403,11 +403,13 @@ All errors are JSON. Check the HTTP status first, then `code` for domain errors.
 |---|---|---|---|
 | `quota_exhausted` | 403 | Metered monthly limit for this component reached. Body has `meta.used` / `meta.limit`. | Show "upgrade / limit reached". |
 | `subscription_not_active` | 403 | No active subscription. | Prompt to subscribe/renew. |
-| `payment_pending` | 403 | Login blocked: account registered but payment not completed. | Send back to payment step. |
+| `payment_pending` | 403 | Login blocked: account registered but payment not completed. `meta.payment` is the latest payment. | Send back to the payment step: poll it, or retry it if `failed`. |
 | `account_suspended` | 403 | Login blocked: admin suspended the account. | Show support message. |
 | `invalid_task_transition` | 409 | (Admin) task board action not valid from current status. | Refresh the task, re-render available actions. |
 | `invalid_tier_change` | 422 | Upgrade target is the same or a lower/equal-priced tier. | Only offer higher tiers; use renew for the same tier. |
 | `payment_callback_mismatch` | 422 | (Webhook) callback didn't match a pending payment. | Server-to-server only. |
+| `payment_callback_unauthorized` | 401 | (Webhook) callback credentials missing or wrong. | Server-to-server only. |
+| `payment_not_retryable` | 409 | Retry refused: the payment is pending or paid, or a newer attempt exists. | Poll the latest payment instead. |
 | `tier_not_purchasable` | 422 | Selected tier is inactive/unavailable. | Refresh tiers. |
 | `role_escalation` | 403 | (Admin) only a System Admin may grant/revoke the System Admin role. | Hide that option for non-System-Admins. |
 | `self_access_change` | 422 | (Admin) you cannot change your own roles/permissions. | Disable the control on your own row. |
@@ -425,6 +427,7 @@ All errors are JSON. Check the HTTP status first, then `code` for domain errors.
 | **SubscriptionStatus** | `pending`, `active`, `expired`, `cancelled` | subscription `status` |
 | **PaymentMethod** | `mpesa`, `card` | register `payment_method`, payment `method` |
 | **PaymentStatus** | `pending`, `successful`, `failed` | payment `status` |
+| **PaymentFailureReason** | `gateway_error`, `expired`, `declined`, `amount_mismatch` | payment `failureReason` (null unless `failed`) |
 | **AccessType** | `unlimited`, `metered`, `denied` | tier allocation `accessType` |
 | **ProductStatus** | `draft`, `awaiting_proofreading`, `in_proofreading`, `rejected`, `approved`, `published` | product `status` (admin/vault) |
 | **TaskStatus** | `queued`, `generating`, `qa_running`, `awaiting_proofreading`, `in_proofreading`, `approved`, `rejected`, `published`, `failed` | generation task `status` |
@@ -448,7 +451,7 @@ Create an account on a chosen tier.
 |---|---|
 | `first_name` | required, string, ≤255 |
 | `last_name` | required, string, ≤255 |
-| `phone` | required, string, ≤30 |
+| `phone` | required, string, ≤30. On a paid tier paying by M-Pesa (the default): a Kenyan mobile, `07…`, `01…` or `+254…` |
 | `email` | required, email, ≤255, unique |
 | `country` | required, string, ≤100 |
 | `password` | required, must match `password_confirmation`, meets default strength |
@@ -477,19 +480,30 @@ Create an account on a chosen tier.
   "message": "Registration received. Complete payment to activate your account.",
   "data": {
     "payment": {
-      "publicId": "…", "method": "mpesa", "amount": "49.99",
-      "currency": "USD", "status": "pending", "paidAt": null
+      "publicId": "…", "method": "mpesa",
+      "amount": "6449.00", "currency": "KES",
+      "listAmount": "49.99", "listCurrency": "USD",
+      "status": "pending", "failureReason": null, "paidAt": null
     },
     "instructions": {
       "type": "mpesa",
-      "message": "Fake gateway: POST the callback endpoint with this gatewayRef to complete payment."
+      "message": "Approve the M-Pesa prompt sent to 254712345678 to pay KES 6,449."
     }
   }
 }
 ```
-> `instructions` is gateway-specific. With the real gateway it will carry the STK-push prompt or card-checkout details. See [The payment flow](#11-the-payment-flow-step-by-step).
+`instructions` depends on the method:
+- `mpesa`: `{ type, message }`. Show the message; the payer approves the prompt on their phone.
+- `card`: `{ type, checkoutUrl, message }`. Send the browser to `checkoutUrl`, PGW's hosted card page.
+  PGW brings the payer back to `{subscriber portal}/payment/return?payment={publicId}`.
 
-**Errors:** `422` validation (e.g. email taken, weak password, unknown tier).
+`amount`/`currency` are what the payer is charged (KES with PGW); `listAmount`/`listCurrency` are the
+tier price it was converted from. If the gateway won't start the payment, the response is still
+`201`, with `payment.status: "failed"` and `failureReason: "gateway_error"`: offer a retry. See
+[The payment flow](#11-the-payment-flow-step-by-step).
+
+**Errors:** `422` validation (e.g. email taken, weak password, unknown tier, or M-Pesa chosen
+without a Kenyan mobile).
 
 ---
 
@@ -510,7 +524,8 @@ Create an account on a chosen tier.
 
 **Errors:**
 - `422` — wrong email/password: `{ "message": "…", "errors": { "email": ["These credentials do not match our records."] } }`
-- `403 payment_pending` — registered but not paid.
+- `403 payment_pending` — registered but not paid. `meta.payment` is their latest payment (the
+  `PaymentResource` shape), so the login page can resume polling it or offer a retry.
 - `403 account_suspended` — suspended by an admin.
 
 ---
@@ -645,12 +660,17 @@ Render the `abstract`, a lock icon, and a Subscribe button. Neither `body` nor `
 ### GET `/tiers`
 Subscription tier cards for the pricing/subscription page, including per-component allocations.
 
+`price`/`currency` is the list price (USD). `charge` is what the payer will actually be asked for
+when that differs, e.g. `{ "amount": "6449.00", "currency": "KES" }` with PGW, so the page can show
+"≈ KES 6,449" before M-Pesa does. It is `null` for free tiers, when nothing is converted, and when no
+exchange rate is configured yet.
+
 **Response (`200`):**
 ```json
 {
   "data": [
     {
-      "publicId": "…", "name": "Freemium", "price": "0.00", "currency": "USD", "billingPeriod": "monthly",
+      "publicId": "…", "name": "Freemium", "price": "0.00", "currency": "USD", "charge": null, "billingPeriod": "monthly",
       "allocations": [
         { "componentCode": "DB", "componentName": "Daily Strategic Intelligence Analytics Brief", "accessType": "metered", "monthlyLimit": 10 },
         { "componentCode": "HM", "componentName": "High Magnitude Crisis Simulation Project", "accessType": "denied", "monthlyLimit": null }
@@ -722,7 +742,9 @@ Full subscription detail (tier + allocations) for the "active subscription" area
 Renew the current subscription for **another month on the same tier**. A month is added from
 whichever is later — now or the current end date — so renewing early never loses remaining days.
 
-**Body:** `payment_method` (optional, `mpesa` or `card`; only used for paid tiers).
+**Body:** `payment_method` (optional, `mpesa` or `card`; only used for paid tiers). M-Pesa, the
+default, needs a Kenyan mobile on the profile; without one this is `422` on `payment_method`: pay by
+card or update the phone first.
 
 **Response — Freemium (`200`):** renewed immediately, no payment.
 ```json
@@ -741,7 +763,8 @@ Then poll `GET /payments/{payment}/status`; on success the term is extended. **E
 Move to a **higher tier, charged at the full price of the new tier**. The change takes effect once
 payment clears, starting a **fresh one-month term** on the new tier.
 
-**Body:** `tier` (required, target tier `publicId`), `payment_method` (optional, `mpesa`/`card`).
+**Body:** `tier` (required, target tier `publicId`), `payment_method` (optional, `mpesa`/`card`;
+M-Pesa needs a Kenyan mobile on the profile, as for renew).
 
 **Response (`202`):** always requires payment (upgrades are to a higher-priced tier).
 ```json
@@ -828,14 +851,30 @@ Render the redacted text with an upgrade CTA above it. `body` is **not** present
 
 ---
 
-### GET `/payments/{payment}/status`
-Poll a payment while it settles. `{payment}` = payment `publicId`.
+### GET `/payments/{payment}/status`  *(no token needed)*
+Poll a payment while it settles. `{payment}` = payment `publicId`. Public, because a paid signup has
+no token until it pays: the UUID is the key. It shares the public catalogue's limit (60/min per IP),
+so poll every 3–5 seconds.
 
 **Response (`200`):**
 ```json
-{ "data": { "publicId": "…", "method": "mpesa", "amount": "49.99", "currency": "USD", "status": "pending", "paidAt": null } }
+{ "data": { "publicId": "…", "method": "mpesa", "amount": "6449.00", "currency": "KES", "listAmount": "49.99", "listCurrency": "USD", "status": "pending", "failureReason": null, "paidAt": null } }
 ```
-Poll until `status` is `successful` (then the user can log in) or `failed` (retry). **Errors:** `404` if it isn't the caller's payment.
+Poll until `status` is `successful` (a signup can now log in) or `failed` (offer a retry). PGW never
+reports an M-Pesa prompt nobody answers: the payment turns `failed` with `failureReason: "expired"`
+once the payment timeout passes (30 minutes by default).
+
+### POST `/payments/{payment}/retry`  *(no token needed)*
+Start a new attempt at a **failed** payment. Body (optional): `payment_method` (`mpesa`/`card`,
+defaults to the failed payment's) and `phone` (M-Pesa only: a different Kenyan number to prompt).
+
+**Response (`202`):** the same `{ payment, instructions }` shape as sign-up, for a **new** payment
+with its own `publicId`. Poll that one from now on.
+
+**Errors:**
+- `409 payment_not_retryable` — the payment is still pending, already paid, or a newer attempt exists.
+- `422` — M-Pesa chosen without a Kenyan mobile.
+- `429` — more than 5 retries a minute.
 
 ### Product ratings
 
@@ -1024,7 +1063,7 @@ Requires the `view transaction history` permission.
 
 | Param | Matches |
 |---|---|
-| `search` | gateway reference, or the payer's first name / last name / email |
+| `search` | gateway reference, the gateway's transaction code (the M-Pesa receipt), or the payer's first name / last name / email |
 | `status` | `pending`, `successful`, `failed` |
 | `method` | `mpesa`, `card` |
 | `gateway` | gateway key (e.g. `fake`, `pgw`) |
@@ -1035,9 +1074,10 @@ Requires the `view transaction history` permission.
 {
   "data": [
     {
-      "publicId": "2fabe368-…", "amount": "49.99", "currency": "USD",
-      "method": "mpesa", "status": "successful",
-      "gateway": "fake", "gatewayRef": "FAKE-D8PDRWURFQIE",
+      "publicId": "2fabe368-…", "amount": "6449.00", "currency": "KES",
+      "listAmount": "49.99", "listCurrency": "USD", "exchangeRate": "129.0000",
+      "method": "mpesa", "status": "successful", "failureReason": null,
+      "gateway": "pgw", "gatewayRef": "SGA-D8PDRWURFQIE", "transactionCode": "SGX1234ABC",
       "what": "Subscription",
       "paidAt": "2026-08-03 11:58:25", "createdAt": "2026-08-03 11:57:51",
       "payer": { "publicId": "9ae6b8c0-…", "name": "Test Payer", "email": "payer@example.com" },
@@ -1058,6 +1098,9 @@ Notes for the UI:
 - `paidAt` is `null` for anything not successful. `createdAt` is when the payment was raised, and
   is what `from`/`to` filter on — bounding on `paidAt` would hide the unsettled rows.
 - The raw gateway callback is **never** returned; it can contain payer PII.
+- `transactionCode` is the gateway's receipt (the M-Pesa code), what a payer quotes to support.
+  `failureReason` says why a `failed` row failed. `listAmount`/`exchangeRate` show the USD tier price
+  a KES charge was converted from (`exchangeRate` is null when nothing was converted).
 
 ### LLM providers — Component→LLM assignment map (FR-20, §13.1)
 `GET /admin/llm-providers` — lists the six LLM providers, each with the Components it is permanently
@@ -1238,30 +1281,50 @@ Returns a `TopicResource`. `POST …/queue` returns the created `GenerationTaskR
 ## 10. Webhooks
 
 ### POST `/webhooks/payments/{gateway}`
-Server-to-server: the payment gateway calls this to confirm a payment. **Not a frontend concern** — listed for completeness. `{gateway}` is the gateway key (e.g. `fake` locally). Idempotent. Returns `{ "message": "Callback processed.", "status": "successful" }`.
+Server-to-server: the payment gateway calls this to confirm a payment. **Not a frontend concern** — listed for completeness. `{gateway}` must be the configured gateway (`pgw` in production, `fake` locally); any other returns `404`. Idempotent. Returns `{ "message": "Callback processed.", "status": "successful" }`.
 
-In local/UAT you can simulate a successful payment yourself — see below.
+PGW authenticates with `Authorization: Bearer base64(callbackKey:callbackSecret)`; a missing or wrong
+credential is `401 payment_callback_unauthorized`. A success that reports less than was charged fails
+the payment with `amount_mismatch` instead of activating it. A success that arrives after the payment
+expired still activates it: the money has moved.
+
+In local/UAT you can simulate the gateway yourself — see below.
 
 ---
 
 ## 11. The payment flow (step by step)
 
-The real gateway (PGW) isn't wired yet; a **fake gateway** runs locally so the whole flow works end-to-end.
+Production uses **PGW**, TechBiz's gateway: an M-Pesa STK push, or PGW's hosted card page. Locally a
+**fake gateway** stands in, so the whole flow works end to end.
 
 **Paid subscription:**
-1. `POST /auth/register` with a paid `tier` → you get `data.payment.publicId` and `data.instructions` (also note the payment's `gatewayRef`, returned by the gateway; in the fake driver it's `FAKE-XXXX`).
-2. The account is `pending`; the user **cannot log in yet** (`403 payment_pending`).
-3. Payment settles when the gateway calls the webhook. **To simulate success locally**, POST to `/webhooks/payments/fake`:
-   ```json
-   { "gateway_ref": "FAKE-XXXX", "result": "success" }
-   ```
-   (or `"result": "failed"` to simulate failure).
-4. Meanwhile the frontend polls `GET /payments/{payment}/status` until `successful`.
-5. On success the user is activated, an invoice is generated, and they can `POST /auth/login`.
+1. `POST /auth/register` with a paid `tier` → `data.payment.publicId` and `data.instructions`.
+   - M-Pesa: show `instructions.message`; the payer approves the prompt on their phone.
+   - Card: send the browser to `instructions.checkoutUrl`. PGW brings the payer back to
+     `/payment/return?payment={publicId}` on the subscriber portal.
+2. The account is `pending`; the user **cannot log in yet** (`403 payment_pending`, with `meta.payment`).
+3. Poll `GET /payments/{publicId}/status` (no token) every few seconds.
+4. When the money arrives the gateway calls the webhook and the status turns `successful`: the user is
+   activated, an invoice is raised, and they can `POST /auth/login`.
+5. If the status turns `failed` (declined, expired unanswered, or the gateway wouldn't start it), offer
+   `POST /payments/{publicId}/retry`, optionally switching to card. Poll the new payment it returns.
+
+**To simulate the gateway locally**, POST to `/webhooks/payments/fake` with the payment's `gatewayRef`
+(from `GET /admin/transactions`, or the `payments` table):
+```json
+{ "gateway_ref": "FAKE-XXXX", "result": "success" }
+```
+`"result": "failed"` simulates a decline; adding `"amount"` exercises the amount check.
+
+**Renewals and upgrades** follow steps 3–5, with the subscriber already signed in.
 
 **Freemium:** no payment — `POST /auth/register` returns a token and an active account immediately. Skip straight to using it.
 
-> When the real PGW driver lands, only steps 1 and 3 change (real STK push / card checkout instead of the fake webhook). The register → poll → login shape stays identical, so build against it now.
+### The `/payment/return` page (subscriber portal)
+PGW's card checkout redirects here with `?payment={publicId}`. The redirect itself proves nothing:
+only the webhook settles a payment. The page polls the status and shows pending, success (on to
+login or the dashboard) or failure (offer a retry). The path is configurable
+(`FRONTEND_PAYMENT_RETURN_PATH`) if the portal names it differently.
 
 ---
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\Access;
 
+use App\Models\Payment;
 use App\Models\User;
 
 /**
@@ -27,6 +28,18 @@ class FrontendLinks
         return $this->to($user, config('frontend.paths.reset_password'), [
             'token' => $token,
             'email' => $user->getEmailForPasswordReset(),
+        ]);
+    }
+
+    /**
+     * Where PGW's hosted card page sends the payer when they finish. That page
+     * only polls GET /payments/{payment}/status: the gateway's callback, not
+     * this redirect, settles the payment.
+     */
+    public function paymentReturn(Payment $payment): string
+    {
+        return $this->to($payment->user, config('frontend.paths.payment_return'), [
+            'payment' => $payment->public_id,
         ]);
     }
 

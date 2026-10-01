@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Public\Auth;
 use App\Enums\UserStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Resources\PaymentResource;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -32,9 +33,17 @@ class AuthenticatedSessionController extends Controller
         }
 
         if ($user->status === UserStatus::Pending) {
+            // The password checked out, so it is safe to say which payment is
+            // outstanding: a subscriber who closed the payment page can poll
+            // or retry it from here.
+            $payment = $user->payments()->latest('id')->first();
+
             return response()->json([
                 'message' => 'Access denied — complete your subscription payment to activate your account.',
                 'code' => 'payment_pending',
+                'meta' => [
+                    'payment' => $payment === null ? null : new PaymentResource($payment),
+                ],
             ], 403);
         }
 
