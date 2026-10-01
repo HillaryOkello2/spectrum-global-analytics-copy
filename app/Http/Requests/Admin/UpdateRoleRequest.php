@@ -13,6 +13,10 @@ class UpdateRoleRequest extends FormRequest
         return Gate::allows('manage users');
     }
 
+    /**
+     * `description` is only written when it is sent: omitting it leaves the
+     * stored one alone, sending null clears it.
+     */
     public function rules(): array
     {
         return [
@@ -22,6 +26,7 @@ class UpdateRoleRequest extends FormRequest
                 'max:100',
                 Rule::unique('roles', 'name')->ignore($this->route('role')?->id),
             ],
+            'description' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

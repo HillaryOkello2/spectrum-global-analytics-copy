@@ -43,6 +43,9 @@ return new class extends Migration
             }
             $table->string('name');
             $table->string('guard_name');
+            // Free text the admin who creates a role types to say what it is
+            // for; the built-in roles leave it null.
+            $table->string('description')->nullable();
             $table->timestamps();
             if ($teams || config('permission.testing')) {
                 $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);

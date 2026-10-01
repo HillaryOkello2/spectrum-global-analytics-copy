@@ -33,10 +33,14 @@ class RoleService
     /**
      * @param  array<int, string>  $permissions
      */
-    public function create(string $name, array $permissions, User $actor): Role
+    public function create(string $name, array $permissions, User $actor, ?string $description = null): Role
     {
-        return DB::transaction(function () use ($name, $permissions, $actor) {
-            $role = Role::create(['name' => $name, 'guard_name' => self::GUARD]);
+        return DB::transaction(function () use ($name, $permissions, $actor, $description) {
+            $role = Role::create([
+                'name' => $name,
+                'description' => $description,
+                'guard_name' => self::GUARD,
+            ]);
             $role->syncPermissions($permissions);
 
             activity()
@@ -50,23 +54,37 @@ class RoleService
     }
 
     /**
-     * Rename a role. Its permissions are managed separately so the role editor
-     * and the permission editor stay independent.
+     * Rename a role, and nothing else.
      */
     public function rename(Role $role, string $name, User $actor): Role
     {
+        return $this->update($role, ['name' => $name], $actor);
+    }
+
+    /**
+     * Change a role's name and/or description. Only the keys supplied are
+     * written, so an editor that omits one leaves it as it was. Permissions are
+     * managed separately, so the role editor and the permission editor stay
+     * independent.
+     *
+     * @param  array<string, mixed>  $attributes  'name' and/or 'description'
+     */
+    public function update(Role $role, array $attributes, User $actor): Role
+    {
         $this->guardProtected($role);
 
-        return DB::transaction(function () use ($role, $name, $actor) {
-            $previous = $role->name;
+        $changes = array_intersect_key($attributes, array_flip(['name', 'description']));
 
-            $role->update(['name' => $name]);
+        return DB::transaction(function () use ($role, $changes, $actor) {
+            $previous = $role->only(array_keys($changes));
+
+            $role->update($changes);
 
             activity()
                 ->causedBy($actor)
                 ->performedOn($role)
-                ->withProperties(['from' => $previous, 'to' => $name])
-                ->log('role renamed');
+                ->withProperties(['from' => $previous, 'to' => $changes])
+                ->log('role updated');
 
             return $role->load('permissions');
         });

@@ -25,6 +25,7 @@ class GenerationTaskController extends Controller
     public const DETAIL_RELATIONS = [
         'product.component',
         'topic.component',
+        'topic.creator',
         'proofreader',
         'redactor',
         'llmProvider',
@@ -33,7 +34,7 @@ class GenerationTaskController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $tasks = GenerationTask::query()
-            ->with(['topic.component', 'product', 'proofreader', 'redactor', 'llmProvider'])
+            ->with(['topic.component', 'topic.creator', 'product', 'proofreader', 'redactor', 'llmProvider'])
             ->filter($request->only(['status']))
             ->latest('queued_at')
             ->paginate(30);

@@ -22,6 +22,7 @@ class ProductReviewResource extends ProductResource
             'redactionApproved' => $this->redaction_approved,
             'status' => $this->status->value,
             'isHidden' => $this->is_hidden,
+            'readsCount' => (int) $this->reads_count,
             'approvedAt' => $this->approved_at?->format('Y-m-d H:i:s'),
         ];
     }

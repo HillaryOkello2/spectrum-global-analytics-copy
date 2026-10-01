@@ -3,11 +3,13 @@
 namespace App\Models;
 
 use App\Enums\Frequency;
+use App\Enums\ProductStatus;
 use App\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Component extends Model
 {
@@ -80,6 +82,27 @@ class Component extends Model
     public function assignedLlmProvider(): BelongsTo
     {
         return $this->belongsTo(LlmProvider::class, 'assigned_llm_provider_id');
+    }
+
+    /**
+     * Every rating left on any of this component's products: the source of the
+     * component-level star average, aggregated in one pass by the listing
+     * queries rather than averaged per product by the caller.
+     */
+    public function productRatings(): HasManyThrough
+    {
+        return $this->hasManyThrough(ProductRating::class, Product::class);
+    }
+
+    /**
+     * The same, counting only products the public can actually see, so the
+     * catalogue's average matches the products it lists.
+     */
+    public function visibleProductRatings(): HasManyThrough
+    {
+        return $this->productRatings()
+            ->where('products.status', ProductStatus::Published)
+            ->where('products.is_hidden', false);
     }
 
     public function products(): HasMany

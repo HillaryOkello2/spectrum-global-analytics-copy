@@ -9,6 +9,26 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ✅ Added for analytics-portal (2026-10-01)
+
+Answers to `ANALYTICS_PORTAL_BACKEND_REQUIREMENTS.md`. All additive — nothing you already call
+changed shape. Full item-by-item reply in `docs/ANALYTICS_PORTAL_BACKEND_RESPONSE.md`.
+
+- **Component star rating** — `averageRating` + `ratingsCount` on `GET /catalog/components` and the
+  vault equivalent. Grid tile and detail masthead are unblocked; don't average products client-side.
+- **Reading time** — `wordCount` + `readMinutes` on every product shape, listings included.
+- **Vault rows** — `status`, `isHidden` and `readsCount` now sit on each row (that last one is the
+  real view count you thought didn't exist).
+- **`GET /admin/vault/products/{product}`** — one product in full for staff, any status. Drop the
+  task-board fallback: `GET /products/{product}` is subscriber-gated and **always** 403s for staff.
+- **Topic author** — `createdBy: { publicId, name }`, resolved server-side. No `manage users` needed.
+- **Role description** — `description` on role payloads, settable on create and update.
+- **`GET /me/stats`** — the subscriber's own `articlesRead`, `reads`, `ratingsGiven`,
+  `averageRatingGiven`.
+- **Already there before this pass**, whatever a stale reference says: `byline`, `averageRating` /
+  **`ratingsCount`** (plural) and `code` on *all* product shapes including listings; `product.code`
+  on the task board list; `joinedAt` on subscriber rows.
+
 ## ⚠️ Changed: payments go through PGW (2026-09-14)
 
 - **Paid amounts are now KES** with PGW: `payment.amount`/`currency` is what's charged, and the new
@@ -111,7 +131,8 @@ subscriber portal — and that page posts both values, with the new password, to
 
 ### Public Catalogue (public, no token)
 Browse without logging in (FR-08):
-- `GET /catalog/components` — the 9 Components, in `sortOrder`.
+- `GET /catalog/components` — the 9 Components, in `sortOrder`, each with `productsCount` and its
+  own `averageRating`/`ratingsCount` (absent average = nobody has rated it).
 - `GET /catalog/components/{component}/products` — published products (title + excerpt only), paginated.
 - `GET /products/{product}/preview` — **abstract + `locked: true`** for any product (the gated
   teaser: render the abstract, a lock, and a Subscribe CTA).
@@ -130,6 +151,7 @@ nested inside a product payload.
 
 ### Subscriber Portal (token, role `subscriber`)
 - `GET /dashboard` — active subscription card + recent products.
+- `GET /me/stats` — the caller's own `articlesRead`, `reads`, `ratingsGiven`, `averageRatingGiven`.
 - `GET /me`, `PATCH /me`, `PUT /me/password` — profile + password. **Open to staff too**, the only
   routes here that are: staff need them to change the temporary password they are emailed.
 - `GET /me/subscription` — subscription details incl. tier allocations.
@@ -161,7 +183,8 @@ nested inside a product payload.
   to share — show it once; it is never returned when the email went out.
   **Staff accounts only** — a subscriber `publicId` here returns `404`, and `subscriber` is not an
   assignable role (`422`). Subscribers live under `/admin/subscribers`.
-- Roles: full CRUD at `/admin/roles` (`{role}` is the role **name**, URL-encoded) plus
+- Roles: full CRUD at `/admin/roles` (`{role}` is the role **name**, URL-encoded; payloads carry an
+  optional free-text `description`, and omitting it on `PUT` leaves it untouched) plus
   `GET/PUT /admin/roles/{role}/permissions` to set what a role grants, and `GET /admin/permissions`
   for the vocabulary. Admins create their own roles (e.g. a Proofreader limited to the task board);
   the three built-in roles are flagged `isSystem` and reject edits with `protected_role`.
@@ -175,7 +198,9 @@ nested inside a product payload.
   `/subscribers-by-location`, `/most-read-products?from=&to=&limit=`, `/product-ratings`,
   `/rejections`. All behind `view analytics`.
 - Vault (all products incl. hidden): `GET /admin/vault/components`,
-  `/vault/components/{component}/products`; `POST /admin/products/{product}/hide` | `/unhide`.
+  `/vault/components/{component}/products` (rows carry `status`, `isHidden`, `readsCount`, ratings),
+  **`GET /admin/vault/products/{product}`** for one product in full at any status, and
+  `POST /admin/products/{product}/hide` | `/unhide`.
 - Task Board (proofreading), now **two review stages**:
   `GET /admin/tasks?status=`, then per task
   `POST /admin/tasks/{task}/open` → `/proofread` (`{ body }`) → **approved**. The `/redact` stage is switched off (`PUBLISHING_REDACTION=false`), so `awaiting_redaction` never occurs — keep the column, it returns when the pass is re-enabled
@@ -186,7 +211,8 @@ nested inside a product payload.
 - Product Generation Master: `GET/POST /admin/topics` (create a topic to generate from — `component`
   only, no `pillar`), `POST /admin/topics/{topic}/queue` (kick off generation), `GET /admin/generation-queue`.
   `prompt_text`/`qa_prompt_text` are now **optional**: omit them and the component's client-supplied
-  prompt is used — send `variables` (the placeholder values) instead. `DB`, `WH` and `MF` create
+  prompt is used — send `variables` (the placeholder values) instead. Each topic carries
+  `createdBy: { publicId, name }` (null on an auto topic). `DB`, `WH` and `MF` create
   their own topics on a schedule, so expect rows there nobody filed.
 
 > **Approving is not publishing.** An approved product joins a FIFO release queue and goes live on a

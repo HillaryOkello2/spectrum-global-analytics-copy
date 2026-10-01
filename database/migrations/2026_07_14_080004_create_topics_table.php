@@ -12,6 +12,8 @@ return new class extends Migration
             $table->id();
             $table->uuid('public_id')->unique();
             $table->foreignId('component_id')->constrained()->cascadeOnDelete();
+            // Who filed it; null for the editions the scheduler commissions.
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('title');
             $table->string('frequency')->index();
             // Where this topic came from: 'manual' (an admin created it) or

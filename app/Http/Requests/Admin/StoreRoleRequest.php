@@ -17,6 +17,8 @@ class StoreRoleRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:100', Rule::unique('roles', 'name')],
+            // What this role is for, in the admin's own words. Optional.
+            'description' => ['nullable', 'string', 'max:255'],
             // An empty array is valid: a role that grants nothing yet.
             'permissions' => ['present', 'array'],
             'permissions.*' => ['string', Rule::exists('permissions', 'name')],

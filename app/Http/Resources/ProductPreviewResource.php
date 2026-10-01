@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Http\Resources\Concerns\EstimatesReadingTime;
 use App\Http\Resources\Concerns\SummarisesRatings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -13,7 +14,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ProductPreviewResource extends JsonResource
 {
-    use SummarisesRatings;
+    use EstimatesReadingTime, SummarisesRatings;
 
     public function toArray(Request $request): array
     {
@@ -25,6 +26,9 @@ class ProductPreviewResource extends JsonResource
             'abstract' => $this->abstract,
             'locked' => true,
             ...$this->ratingSummary(),
+            // Word count, not the words: how long the full article runs is not
+            // itself gated content.
+            ...$this->readingTime(),
             'publishedAt' => $this->published_at?->format('Y-m-d H:i:s'),
             'component' => new ComponentResource($this->whenLoaded('component')),
         ];

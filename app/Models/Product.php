@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ProductStatus;
 use App\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -40,7 +41,28 @@ class Product extends Model
             'approved_at' => 'datetime',
             'published_at' => 'datetime',
             'reads_count' => 'integer',
+            'word_count' => 'integer',
         ];
+    }
+
+    /**
+     * The word count is written with the body it describes, wherever that body
+     * comes from — generation, proofreading, a seeder — so listings and
+     * previews, which never carry the body, can still show a reading time.
+     */
+    protected function body(): Attribute
+    {
+        return Attribute::set(fn (?string $value) => [
+            'body' => $value,
+            'word_count' => self::countWords($value),
+        ]);
+    }
+
+    public static function countWords(?string $text): int
+    {
+        $words = preg_split('/\s+/', trim(strip_tags((string) $text))) ?: [];
+
+        return count(array_filter($words, fn (string $word) => $word !== ''));
     }
 
     public function component(): BelongsTo

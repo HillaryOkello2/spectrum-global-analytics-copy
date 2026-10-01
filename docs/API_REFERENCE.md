@@ -30,6 +30,25 @@ example success and error responses.
 
 ---
 
+## Added — 2026-10-01 (analytics-portal pass)
+
+Additive only — nothing here changes or removes an existing field.
+
+| What | Where |
+|---|---|
+| `averageRating` + `ratingsCount` on a **Component** | `GET /catalog/components`, `GET /admin/vault/components` |
+| `wordCount` + `readMinutes` on every product shape | listings, preview, full product, task board, vault |
+| `status`, `isHidden`, `readsCount` on each **vault row** | `GET /admin/vault/components/{component}/products` |
+| **New:** one product in full for staff, any status | `GET /admin/vault/products/{product}` |
+| `createdBy: { publicId, name }` on a **Topic** | `GET`/`POST /admin/topics` |
+| `description` on a **Role**, settable on create/update | `/admin/roles` |
+| **New:** a subscriber's own reading/rating totals | `GET /me/stats` |
+
+Already present before this pass, in case a stale copy of this file said otherwise:
+`byline`, `averageRating`/`ratingsCount` (note the **plural** `ratingsCount`) and `code` on every
+product shape including listings; `product.code` on the task board list; `joinedAt` on subscriber
+rows.
+
 ## ⚠️ Breaking changes — 2026-08-25 (client prompt pack)
 
 **The nine components have new codes.** The placeholder `A1`–`A9` set is replaced by the nine
@@ -602,12 +621,22 @@ Lists all 9 Components, in `sortOrder` (DB first). This is the catalogue's entry
 ```json
 {
   "data": [
-    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "sortOrder": 1, "productsCount": 3 }
+    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "sortOrder": 1, "productsCount": 3, "averageRating": 4.6, "ratingsCount": 28 }
   ]
 }
 ```
 
 **`productsCount`** — how many products the component holds, so you can show a badge without opening it. On every public and subscriber endpoint it counts **published, non-hidden** products, exactly the ones `/catalog/components/{component}/products` would list.
+
+**`averageRating` / `ratingsCount`** — the component's own star rating: every rating left on its
+products, averaged in one aggregate pass. Use it for the grid tile and the detail masthead; do not
+average the products yourself. `averageRating` is **absent** when nobody has rated the component yet
+(`ratingsCount: 0`) — absent means "no ratings", which a zero would misrender as half a star. The
+public catalogue averages over published, non-hidden products only; the vault's equivalent spans
+every product it lists, so the two legitimately differ.
+
+> Both rating keys appear on the same listings `productsCount` does, and are likewise absent from a
+> `component` object nested inside a product payload.
 
 > `productsCount` appears **only** on the catalogue and vault listings. It is deliberately **absent** from the `component` object embedded inside a product payload — don't read it there, use the listing endpoint.
 
@@ -624,7 +653,10 @@ Published, non-hidden products under a component. **Paginated** (20/page). `{com
   "data": [
     {
       "publicId": "…", "code": "SGA.DB.001.08.26", "title": "Red Sea Chokepoint Risk Outlook",
-      "excerpt": "The first 160 characters of the abstract…", "publishedAt": "2026-07-15 12:11:57",
+      "byline": "M. Aldous", "excerpt": "The first 160 characters of the abstract…",
+      "averageRating": 4.6, "ratingsCount": 12,
+      "wordCount": 4820, "readMinutes": 22,
+      "publishedAt": "2026-07-15 12:11:57",
       "component": {
         "publicId": "…", "code": "DB", "name": "Daily Strategic Intelligence Analytics Brief", "batch": 1, "isTransactional": false, "sortOrder": 1
       }
@@ -634,6 +666,15 @@ Published, non-hidden products under a component. **Paginated** (20/page). `{com
   "meta": { "current_page": 1, "last_page": 1, "per_page": 20, "total": 1 }
 }
 ```
+**`wordCount` / `readMinutes`** — the length of the full article and the reading-time estimate
+(225 words a minute, rounded up, never below 1). Both are counted server-side when the body is
+written, which is why a listing that carries no body can still show them. Both are **absent** on a
+product whose body predates this field until it is next saved.
+
+**`averageRating` / `ratingsCount`** — per product, on listings as well as the single-product
+endpoints. Absent (not `0`) when ratings were not aggregated or none exist, same rule as the
+component-level pair.
+
 > Listings never include the body — only a short `excerpt` taken from the **abstract**. Every product embeds its `component`, so you can resolve a product's place in the catalogue from the product payload alone.
 
 ---
@@ -646,14 +687,17 @@ The gated teaser for any published product (FR-09). `{product}` = product `publi
 {
   "data": {
     "publicId": "…", "code": "SGA.DB.001.08.26", "title": "Red Sea Chokepoint Risk Outlook",
+    "byline": "M. Aldous",
     "abstract": "The proofreader-written abstract, in full…",
     "locked": true,
+    "averageRating": 4.6, "ratingsCount": 12,
+    "wordCount": 4820, "readMinutes": 22,
     "publishedAt": "2026-07-15 12:11:57",
     "component": { "publicId": "…", "code": "DB", "name": "…", "batch": 1, "isTransactional": false, "sortOrder": 1 }
   }
 }
 ```
-Render the `abstract`, a lock icon, and a Subscribe button. Neither `body` nor `redactedBody` is ever present on this endpoint. **Errors:** `404` if the product isn't published or is hidden.
+Render the `abstract`, a lock icon, and a Subscribe button. Neither `body` nor `redactedBody` is ever present on this endpoint — `wordCount`/`readMinutes` describe the gated article without exposing a word of it. **Errors:** `404` if the product isn't published or is hidden.
 
 ---
 
@@ -703,6 +747,20 @@ Active subscription card + recent products.
 }
 ```
 `subscription` is `null` if the user has no active subscription.
+
+---
+
+### GET `/me/stats`
+The caller's **own** reading and rating totals, for the subscriber dashboard. Strictly about
+themselves; the catalogue-wide equivalents live behind `/admin/analytics` and `view analytics`.
+
+**Response (`200`):**
+```json
+{ "data": { "articlesRead": 48, "reads": 61, "ratingsGiven": 31, "averageRatingGiven": 4.3 } }
+```
+`articlesRead` counts **distinct** products (re-reading one article is not two), `reads` counts every
+open including repeats. `averageRatingGiven` is `null` for a subscriber who has rated nothing.
+**Errors:** `403` for a staff token — this is a subscriber endpoint.
 
 ---
 
@@ -806,9 +864,11 @@ Branch on `locked` and `redacted`, not on which fields happen to be present.
 ```json
 {
   "data": {
-    "publicId": "…", "code": "SGA.DB.003.08.26", "title": "…",
+    "publicId": "…", "code": "SGA.DB.003.08.26", "title": "…", "byline": "M. Aldous",
     "abstract": "…", "body": "…full article text…",
-    "locked": false, "publishedAt": "…", "component": { "code": "DB", "name": "…" }
+    "locked": false, "averageRating": 4.6, "ratingsCount": 12,
+    "wordCount": 4820, "readMinutes": 22,
+    "publishedAt": "…", "component": { "code": "DB", "name": "…" }
   },
   "meta": { "access": "unlimited" }
 }
@@ -985,15 +1045,20 @@ Admins define their own roles here — e.g. a Proofreader who may only work the 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/admin/roles` | Every assignable role, what it grants, and how many users hold it. Builds the role picker. `subscriber` is not listed — it cannot be assigned. |
-| POST | `/admin/roles` | Create a role. Body: `name` (unique), `permissions` (array of names; `[]` allowed). Returns `201`. |
+| POST | `/admin/roles` | Create a role. Body: `name` (unique), `permissions` (array of names; `[]` allowed), `description` (optional, ≤255). Returns `201`. |
 | GET | `/admin/roles/{role}` | One role. |
-| PUT | `/admin/roles/{role}` | Rename. Body: `name`. |
+| PUT | `/admin/roles/{role}` | Rename, and/or change the description. Body: `name` (required), `description` (optional). |
 | DELETE | `/admin/roles/{role}` | Delete a role that no user holds. |
 | GET | `/admin/roles/{role}/permissions` | What the role grants. |
 | PUT | `/admin/roles/{role}/permissions` | **Replace** what it grants. Body: `permissions` (array of names; `[]` strips it bare). Takes effect immediately for every user holding the role. |
 | GET | `/admin/permissions` | Every permission name in the system (the vocabulary for the two lists above). |
 
 `{role}` is the role **name**, URL-encoded — `/admin/roles/Content%20Manager`.
+
+**`description`** — free text the admin who creates the role types to say what it is for ("Full
+editorial and account oversight"). Returned on every role payload; `null` when blank and on the
+built-in roles. On `PUT`, **omitting** it leaves the stored one untouched (so a rename never wipes
+copy the renamer did not see) and sending `null` clears it.
 
 **Assigning to users**
 
@@ -1180,10 +1245,22 @@ Drill-down that includes hidden and unpublished products (admins see everything)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/vault/components` | All 9 components, each with `productsCount`. |
-| GET | `/admin/vault/components/{component}/products` | All products of a component (paginated). Adds `meta.statuses`: a map of each product `publicId` → `{ status, isHidden }`. |
+| GET | `/admin/vault/components` | All 9 components, each with `productsCount` and the component's `averageRating`/`ratingsCount` across every product it holds. |
+| GET | `/admin/vault/components/{component}/products` | All products of a component (paginated). Each row carries `status`, `isHidden` and `readsCount` on top of the public listing fields. `meta.statuses` (each product `publicId` → `{ status, isHidden }`) is still sent for clients written against it. |
+| GET | `/admin/vault/products/{product}` | **One product in full, at every content level, whatever its status** — `body`, `redactedBody`, `redactionApproved`, `status`, `isHidden`, `readsCount`, `approvedAt`. This is the vault's article view. |
 | POST | `/admin/products/{product}/hide` | Immediately hide a product from subscribers. |
 | POST | `/admin/products/{product}/unhide` | Restore visibility. |
+
+> **Use `/admin/vault/products/{product}`, not `/products/{product}`, for the vault article view.**
+> `GET /products/{product}` is the subscriber portal's entitlement-checked reader and sits behind
+> `role:subscriber`, so a staff token gets **403**, every time — staff hold no subscription to check
+> against. There is no need to hunt the task board for a body any more. Opening a product here is
+> also deliberately **not** counted as a read: `readsCount` measures subscribers consuming content,
+> not editorial review.
+>
+> **`readsCount`** is the real read count behind `analytics/most-read-products` — every time a
+> subscriber was served the full or redacted document, repeat reads included. A locked preview is
+> not a read.
 
 Hide/unhide return the product's `ProductListResource`. Hiding removes it from every subscriber and public endpoint at the data layer.
 
@@ -1271,8 +1348,13 @@ complete article `body` so the proofreader can review everything:
 | `title` | required, string, ≤255 |
 | `component` | required, component `publicId` |
 | `frequency` | required, one of `daily`/`weekly`/`monthly`/`quarterly` |
-| `prompt_text` | required, string — the instruction sent to the LLM |
-| `qa_prompt_text` | required, string — the quality-assurance instruction |
+| `prompt_text` | optional, string — a prompt of this topic's own. Omit it to render the component's client-supplied template instead, and send `variables` |
+| `qa_prompt_text` | optional, string — same rule |
+| `variables` | optional object of the component's declared placeholders, e.g. `{"PRIMARY_TOPIC": "…"}`. Required when `prompt_text` is omitted |
+
+**`createdBy`** — every topic payload carries `{ publicId, name }` for the admin who filed it,
+resolved server-side so a topics editor never needs `manage users` to show a name. It is **`null` on
+an auto topic**: the scheduler commissioned that edition and no person filed it (`source: "auto"`).
 
 Returns a `TopicResource`. `POST …/queue` returns the created `GenerationTaskResource` (status `queued`).
 

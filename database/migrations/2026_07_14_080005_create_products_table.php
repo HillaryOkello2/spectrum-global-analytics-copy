@@ -32,6 +32,9 @@ return new class extends Migration
             $table->timestamp('published_at')->nullable();
             // Denormalised counter behind the "most read" chart; the per-read
             // ledger lives in product_reads.
+            // Maintained with the body (see Product::body()) so a reading-time
+            // estimate can be served where the body itself never is.
+            $table->unsignedInteger('word_count')->nullable();
             $table->unsignedBigInteger('reads_count')->default(0);
             $table->timestamps();
 

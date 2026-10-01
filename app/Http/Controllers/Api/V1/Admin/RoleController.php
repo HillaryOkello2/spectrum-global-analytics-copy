@@ -46,6 +46,7 @@ class RoleController extends Controller
             $request->validated('name'),
             $request->validated('permissions'),
             $request->user(),
+            $request->validated('description'),
         );
 
         return new RoleResource($role->loadCount('users'));
@@ -58,7 +59,11 @@ class RoleController extends Controller
 
     public function update(UpdateRoleRequest $request, Role $role): RoleResource
     {
-        $role = $this->roles->rename($role, $request->validated('name'), $request->user());
+        $role = $this->roles->update(
+            $role,
+            $request->safe()->only(['name', 'description']),
+            $request->user(),
+        );
 
         return new RoleResource($role->loadCount('users'));
     }

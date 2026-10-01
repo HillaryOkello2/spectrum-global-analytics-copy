@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Http\Resources\Concerns\EstimatesReadingTime;
 use App\Http\Resources\Concerns\SummarisesRatings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -12,7 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class ProductResource extends JsonResource
 {
-    use SummarisesRatings;
+    use EstimatesReadingTime, SummarisesRatings;
 
     public function toArray(Request $request): array
     {
@@ -25,6 +26,7 @@ class ProductResource extends JsonResource
             'body' => $this->body,
             'locked' => false,
             ...$this->ratingSummary(),
+            ...$this->readingTime(),
             'publishedAt' => $this->published_at?->format('Y-m-d H:i:s'),
             'component' => new ComponentResource($this->whenLoaded('component')),
         ];

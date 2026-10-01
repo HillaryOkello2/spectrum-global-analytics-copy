@@ -16,6 +16,9 @@ class RoleResource extends JsonResource
     {
         return [
             'name' => $this->name,
+            // Free text the admin who created the role typed; null if they
+            // left it blank, and on the built-in roles.
+            'description' => $this->description,
             // Built-in roles the app keys behaviour off: read-only, and the UI
             // should hide edit/delete controls for them.
             'isSystem' => in_array($this->name, RoleService::PROTECTED_ROLES, true),

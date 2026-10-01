@@ -12,7 +12,8 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  *
  * Public catalogue entry point: the nine Components (FR-04). `productsCount`
  * counts published, non-hidden products only — the vault's equivalent count
- * includes drafts and hidden products and will not match.
+ * includes drafts and hidden products and will not match. The star rating is
+ * aggregated the same way, over the ratings of visible products.
  */
 class ComponentController extends Controller
 {
@@ -21,6 +22,10 @@ class ComponentController extends Controller
         return ComponentResource::collection(
             Component::query()
                 ->withCount(['products' => fn ($query) => $query->visible()])
+                // One aggregate pass for the whole grid, rather than a request
+                // per product to average client-side.
+                ->withCount(['visibleProductRatings as ratings_count'])
+                ->withAvg(['visibleProductRatings as ratings_avg_stars'], 'stars')
                 ->orderBy('sort_order')
                 ->get(),
         );

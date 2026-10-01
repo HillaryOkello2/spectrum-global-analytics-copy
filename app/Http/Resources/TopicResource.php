@@ -16,6 +16,12 @@ class TopicResource extends JsonResource
             // 'auto' means the scheduler commissioned this edition; 'manual'
             // means an admin filed it.
             'source' => $this->source,
+            // Resolved here so a topics editor never needs `manage users` just
+            // to see who filed one. Null on an auto topic: the scheduler did.
+            'createdBy' => $this->whenLoaded('creator', fn () => $this->creator === null ? null : [
+                'publicId' => $this->creator->public_id,
+                'name' => $this->creator->full_name,
+            ]),
             // Null on an auto topic — it renders the component's template
             // against `variables` instead of carrying a prompt of its own.
             'promptText' => $this->prompt_text,

@@ -21,7 +21,7 @@ class TopicController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $topics = Topic::query()
-            ->with('component')
+            ->with(['component', 'creator'])
             ->latest()
             ->paginate(20);
 
@@ -35,10 +35,13 @@ class TopicController extends Controller
         $topic = Topic::create([
             ...$request->safe()->except('component'),
             'component_id' => $component->id,
+            // Recorded on the row, so the topics table can name its author
+            // without the caller also holding `manage users`.
+            'created_by' => $request->user()->id,
         ]);
 
         activity()->causedBy($request->user())->performedOn($topic)->log('topic created');
 
-        return new TopicResource($topic->load('component'));
+        return new TopicResource($topic->load('component', 'creator'));
     }
 }

@@ -2,11 +2,16 @@
 
 namespace App\Http\Resources;
 
+use App\Http\Resources\Concerns\SummarisesRatings;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class ComponentResource extends JsonResource
 {
+    // The component's own star rating: the average across every rating left on
+    // its products, aggregated in the listing query rather than per product.
+    use SummarisesRatings;
+
     public function toArray(Request $request): array
     {
         return [
@@ -19,6 +24,7 @@ class ComponentResource extends JsonResource
             // Present only where the endpoint counted it — never on a component
             // nested inside a product or topic payload.
             'productsCount' => $this->whenCounted('products', fn ($count) => (int) $count),
+            ...$this->ratingSummary(),
 
             // --- Generation metadata (admin only) -----------------------------
             // This resource is also served on the public catalogue, so the prompt

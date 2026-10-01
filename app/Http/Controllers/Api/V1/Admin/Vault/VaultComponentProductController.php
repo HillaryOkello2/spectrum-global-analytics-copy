@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin\Vault;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\ProductListResource;
+use App\Http\Resources\VaultProductListResource;
 use App\Models\Component;
 use App\Models\Product;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -18,7 +18,14 @@ class VaultComponentProductController extends Controller
 {
     public function index(Component $component): AnonymousResourceCollection
     {
-        $products = $component->products()->with('component')->latest()->paginate(20);
+        $products = $component->products()
+            ->with('component')
+            // Aggregated per page, so a vault table of hundreds of rows can
+            // show ratings without a request per row.
+            ->withCount('ratings')
+            ->withAvg('ratings', 'stars')
+            ->latest()
+            ->paginate(20);
 
         // Built before the resource collection: ::collection() swaps the
         // paginator's models for resource instances in place.
@@ -29,7 +36,9 @@ class VaultComponentProductController extends Controller
             ],
         ]);
 
-        return ProductListResource::collection($products)
+        // Each row now carries its own status, hidden flag and read count;
+        // meta.statuses is kept for clients written against the older shape.
+        return VaultProductListResource::collection($products)
             ->additional(['meta' => ['statuses' => $statuses]]);
     }
 }

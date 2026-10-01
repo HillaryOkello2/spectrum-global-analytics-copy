@@ -38,6 +38,7 @@ class Topic extends Model
         'qa_prompt_text',
         'is_active',
         'last_generated_at',
+        'created_by',
     ];
 
     protected function casts(): array
@@ -53,6 +54,15 @@ class Topic extends Model
     public function component(): BelongsTo
     {
         return $this->belongsTo(Component::class);
+    }
+
+    /**
+     * The admin who filed this topic. Null on the editions the scheduler
+     * commissions, which nobody filed.
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function generationTasks(): HasMany

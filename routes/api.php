@@ -53,6 +53,8 @@ Route::prefix('v1')->as('api.')->group(function (): void {
         // Subscriber portal (FR-31..37)
         Route::middleware('role:subscriber')->group(function (): void {
             Route::get('dashboard', Subscriber\DashboardController::class)->name('dashboard');
+            // The caller's own reading/rating totals for their dashboard.
+            Route::get('me/stats', Subscriber\ReadingStatsController::class)->name('me.stats');
             Route::get('me/subscription', [Subscriber\SubscriptionController::class, 'show'])->name('me.subscription');
             Route::post('me/subscription/renew', Subscriber\RenewSubscriptionController::class)->name('me.subscription.renew');
             Route::post('me/subscription/upgrade', Subscriber\UpgradeSubscriptionController::class)->name('me.subscription.upgrade');
@@ -107,6 +109,11 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                     ->only('index')->names('vault.components');
                 Route::apiResource('vault/components.products', Admin\Vault\VaultComponentProductController::class)
                     ->only('index')->names('vault.components.products');
+                // One product in full for staff review. GET /products/{product}
+                // cannot serve this: it is the subscriber portal's
+                // entitlement-checked reader and refuses a staff token.
+                Route::apiResource('vault/products', Admin\Vault\VaultProductController::class)
+                    ->only('show')->names('vault.products');
                 Route::post('products/{product}/hide', Admin\Products\HideProductController::class)->name('products.hide');
                 Route::post('products/{product}/unhide', Admin\Products\UnhideProductController::class)->name('products.unhide');
             });

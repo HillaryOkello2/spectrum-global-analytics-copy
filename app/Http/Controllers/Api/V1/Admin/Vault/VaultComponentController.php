@@ -18,8 +18,14 @@ class VaultComponentController extends Controller
     {
         // Counts every product, matching what the vault lists — drafts and
         // hidden included, unlike the public catalogue's visible-only count.
+        // The rating average follows suit and spans them all.
         return ComponentResource::collection(
-            Component::query()->withCount('products')->orderBy('sort_order')->get(),
+            Component::query()
+                ->withCount('products')
+                ->withCount(['productRatings as ratings_count'])
+                ->withAvg(['productRatings as ratings_avg_stars'], 'stars')
+                ->orderBy('sort_order')
+                ->get(),
         );
     }
 }
