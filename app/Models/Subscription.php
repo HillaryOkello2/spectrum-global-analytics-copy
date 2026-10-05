@@ -20,6 +20,7 @@ class Subscription extends Model
         'status',
         'starts_at',
         'ends_at',
+        'last_reminder_days',
     ];
 
     protected function casts(): array

@@ -1450,6 +1450,22 @@ expires (default 30 minutes), then turns `failed` with `failureReason: "expired"
 
 **Freemium:** no payment — `POST /auth/register` returns a token and an active account immediately. Skip straight to using it.
 
+### What the subscriber is emailed
+
+Sent automatically, on the `default` queue — the portal does not trigger any of them, but its copy
+should agree with them.
+
+| When | Email | Carries |
+|---|---|---|
+| A payment settles | "Your subscription is active" / "…has been renewed" / "…has been upgraded" | the amount charged, the M-Pesa reference, the date access runs to, and **the invoice as a PDF attachment** |
+| A payment fails (declined, expired, short) | "Your payment did not go through" | why, and a link to `/payment/return/{publicId}` to try again |
+| 7 days before a term ends | "Your subscription ends in N days" | the end date, and a link to `{portal}/subscription` |
+| The last day | "Your subscription ends tomorrow" | as above; each notice is sent once |
+| The term lapses | "Your subscription has ended" | that access has closed, and how to restore it |
+
+Because the PDF is attached, the portal does **not** need to offer an invoice download to close the
+loop — though `GET /me/invoices/{invoice}` still carries the same data as JSON.
+
 ### The `/payment/return/{publicId}` page (subscriber portal)
 PGW's hosted page redirects here after **either** payment method, with the payment's `publicId` as
 the **last path segment** — `/payment/return/9f8e7d6c-…`. It is in the path rather than a query

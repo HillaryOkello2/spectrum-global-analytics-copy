@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\PaymentFailureReason;
 use App\Enums\PaymentStatus;
 use App\Models\Payment;
+use App\Notifications\PaymentFailed;
 use Illuminate\Console\Command;
 
 /**
@@ -21,10 +22,21 @@ class ExpirePendingPaymentsCommand extends Command
 
     public function handle(): int
     {
-        $expired = Payment::stale()->update([
-            'status' => PaymentStatus::Failed,
-            'failure_reason' => PaymentFailureReason::Expired,
-        ]);
+        $expired = 0;
+
+        // Row by row rather than one mass update: each payer is told their
+        // attempt lapsed, and given the link that starts a new one.
+        Payment::stale()->with('user')->chunkById(100, function ($payments) use (&$expired): void {
+            foreach ($payments as $payment) {
+                $payment->update([
+                    'status' => PaymentStatus::Failed,
+                    'failure_reason' => PaymentFailureReason::Expired,
+                ]);
+
+                $payment->user?->notify(new PaymentFailed($payment));
+                $expired++;
+            }
+        });
 
         $this->info("Expired {$expired} payment(s).");
 

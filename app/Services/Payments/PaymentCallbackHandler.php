@@ -6,6 +6,7 @@ use App\Enums\PaymentFailureReason;
 use App\Enums\PaymentStatus;
 use App\Exceptions\Domain\PaymentCallbackMismatchException;
 use App\Models\Payment;
+use App\Notifications\PaymentFailed;
 use App\Services\Billing\SubscriptionActivator;
 use App\Services\Payments\Contracts\PaymentGateway;
 use App\Services\Payments\DTOs\CallbackResult;
@@ -66,6 +67,8 @@ class PaymentCallbackHandler
                         'failure_reason' => PaymentFailureReason::Declined,
                         'raw_callback' => $result->raw,
                     ]);
+
+                    $payment->user->notify(new PaymentFailed($payment));
                 }
 
                 return $payment;
@@ -84,6 +87,8 @@ class PaymentCallbackHandler
                     'transaction_code' => $result->transactionCode,
                     'raw_callback' => $result->raw,
                 ]);
+
+                $payment->user->notify(new PaymentFailed($payment));
 
                 return $payment;
             }

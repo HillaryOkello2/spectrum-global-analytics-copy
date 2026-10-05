@@ -32,6 +32,15 @@ class FrontendLinks
     }
 
     /**
+     * The subscriber's own subscription page, where renewing and upgrading
+     * start. Linked from the expiry notices.
+     */
+    public function subscription(User $user): string
+    {
+        return $this->to($user, config('frontend.paths.subscription'));
+    }
+
+    /**
      * Where PGW's hosted page sends the payer when they finish. That page only
      * polls GET /payments/{payment}/status: the gateway's callback, not this
      * redirect, settles the payment.

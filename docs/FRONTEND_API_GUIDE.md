@@ -9,6 +9,20 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ✅ Added: subscribers now get emails (2026-10-05)
+
+The backend sends these on its own; nothing to call, but your copy should match what lands in their
+inbox. Full table in `API_REFERENCE.md` §11.
+
+- **Payment settled** — confirms the amount and the date access runs to, **with the invoice attached
+  as a PDF**. Three variants: first subscription, renewal, upgrade. So a "we've emailed your invoice"
+  line on the success screen is accurate, and an invoice download is no longer the only way to get one.
+- **Payment failed** — declined, expired or short-paid, with a link back to
+  `/payment/return/{publicId}` to retry. Worth knowing when writing the failure screen: they will
+  have this email even if they closed the tab.
+- **Expiry notices** — 7 days out and on the last day, plus one when the term actually lapses. All
+  link to `{subscriber portal}/subscription`, so that route needs to exist.
+
 ## ✅ Fixed: filing a topic needs only a title and a component (2026-10-05)
 
 `POST /admin/topics` used to reject `{ title, component }` with "The frequency field is required"

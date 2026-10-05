@@ -8,6 +8,7 @@ use App\Enums\UserStatus;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
+use App\Notifications\PaymentReceived;
 use Illuminate\Support\Facades\DB;
 
 class SubscriptionActivator
@@ -28,6 +29,10 @@ class SubscriptionActivator
      */
     public function activate(Payment $payment, array $rawCallback = [], ?string $transactionCode = null): void
     {
+        // Read before the subscription is touched: once a signup has been
+        // activated it is indistinguishable from a renewal.
+        $kind = $this->kindOf($payment);
+
         DB::transaction(function () use ($payment, $rawCallback, $transactionCode): void {
             $payment->update([
                 'status' => PaymentStatus::Successful,
@@ -50,6 +55,24 @@ class SubscriptionActivator
             ->causedBy($payment->user)
             ->performedOn($payment)
             ->log('payment confirmed; subscription activated');
+
+        // Queued: it renders a PDF and sends mail, neither of which belongs in
+        // the gateway's callback request.
+        $payment->user->notify(new PaymentReceived($payment->refresh(), $kind));
+    }
+
+    /**
+     * Which of the three occasions this payment is, in the subscriber's terms.
+     */
+    private function kindOf(Payment $payment): string
+    {
+        if ($payment->payable instanceof SubscriptionTier) {
+            return PaymentReceived::UPGRADE;
+        }
+
+        return $payment->subscription?->starts_at === null
+            ? PaymentReceived::SIGNUP
+            : PaymentReceived::RENEWAL;
     }
 
     private function applyToSubscription(Payment $payment, Subscription $subscription): void
@@ -59,6 +82,8 @@ class SubscriptionActivator
             $subscription->update([
                 'tier_id' => $payment->payable->id,
                 'status' => SubscriptionStatus::Active,
+                // A fresh term starts its expiry notices over.
+                'last_reminder_days' => null,
                 'starts_at' => now(),
                 'ends_at' => now()->addMonth(),
             ]);
@@ -70,6 +95,8 @@ class SubscriptionActivator
         if ($subscription->starts_at === null) {
             $subscription->update([
                 'status' => SubscriptionStatus::Active,
+                // A fresh term starts its expiry notices over.
+                'last_reminder_days' => null,
                 'starts_at' => now(),
                 'ends_at' => now()->addMonth(),
             ]);
@@ -83,6 +110,7 @@ class SubscriptionActivator
 
         $subscription->update([
             'status' => SubscriptionStatus::Active,
+            'last_reminder_days' => null,
             'ends_at' => $base->copy()->addMonth(),
         ]);
     }
