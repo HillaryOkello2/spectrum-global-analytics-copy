@@ -3,7 +3,9 @@
 namespace Database\Factories;
 
 use App\Enums\ProductStatus;
+use App\Enums\TaskStatus;
 use App\Models\Component;
+use App\Models\GenerationTask;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -58,7 +60,34 @@ class ProductFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => ProductStatus::Approved,
             'approved_at' => now(),
-        ]);
+        ])->afterCreating(function (Product $product): void {
+            // Every approved product in a real database came through the
+            // pipeline and carries a task a proofreader submitted; the release
+            // queue refuses to publish one that does not.
+            GenerationTask::factory()->create([
+                'product_id' => $product->id,
+                'status' => TaskStatus::Approved,
+                'proofread_at' => now(),
+            ]);
+        });
+    }
+
+    /**
+     * Approved, but nobody ever submitted the proofread — the state that must
+     * never reach subscribers.
+     */
+    public function approvedUnproofread(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => ProductStatus::Approved,
+            'approved_at' => now(),
+        ])->afterCreating(function (Product $product): void {
+            GenerationTask::factory()->create([
+                'product_id' => $product->id,
+                'status' => TaskStatus::InProofreading,
+                'proofread_at' => null,
+            ]);
+        });
     }
 
     public function published(): static

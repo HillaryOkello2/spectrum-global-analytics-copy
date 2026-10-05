@@ -213,7 +213,7 @@ becomes a two-step flow:
   not prefill it from the body — that would publish the opening of the article as the teaser.
 - Both new endpoints validate: `abstract` (required, ≤5000) + `body` (required), and `redacted_body`
   (required). Out-of-order calls return `409 invalid_task_transition` — same handling you already have.
-- `/approve` still exists and still works, for products that need no redaction pass.
+- `/approve` still exists, for products that need no redaction pass — but only after `/proofread`.
 
 ### 6. Stop telling users "Approved = live" — **small, but a support-ticket generator**
 
@@ -425,6 +425,7 @@ All errors are JSON. Check the HTTP status first, then `code` for domain errors.
 | `payment_pending` | 403 | Login blocked: account registered but payment not completed. `meta.payment` is the latest payment. | Send back to the payment step: poll it, or retry it if `failed`. |
 | `account_suspended` | 403 | Login blocked: admin suspended the account. | Show support message. |
 | `invalid_task_transition` | 409 | (Admin) task board action not valid from current status. | Refresh the task, re-render available actions. |
+| `product_not_proofread` | 409 | (Admin) approval refused: no proofreader has submitted the document. | Submit `/proofread` first; Approve alone cannot publish raw model output. |
 | `invalid_tier_change` | 422 | Upgrade target is the same or a lower/equal-priced tier. | Only offer higher tiers; use renew for the same tier. |
 | `payment_callback_mismatch` | 422 | (Webhook) callback didn't match a pending payment. | Server-to-server only. |
 | `payment_callback_unauthorized` | 401 | (Webhook) callback credentials missing or wrong. | Server-to-server only. |
@@ -1291,7 +1292,7 @@ awaiting_proofreading → in_proofreading → awaiting_redaction → approved �
 | POST | `/admin/tasks/{task}/open` | Start proofreading — captures proofreader + timestamp, returns the full detail. → `in_proofreading` |
 | POST | `/admin/tasks/{task}/proofread` | **Stage 1.** Submit the corrected title, byline, abstract and document. **Body:** `title` (required, ≤255), `byline` (optional, ≤500), `abstract` (required, ≤5000), `body` (required). → `awaiting_redaction` |
 | POST | `/admin/tasks/{task}/redact` | **Stage 2.** Submit the redacted document. **Body:** `redacted_body` (required). Approves the product. → `approved` |
-| POST | `/admin/tasks/{task}/approve` | Approve without a redaction pass. → `approved` |
+| POST | `/admin/tasks/{task}/approve` | Approve without a redaction pass. → `approved`. **Refused with `409 product_not_proofread` unless `/proofread` was submitted for this task** — it cannot stand in for proofreading |
 | POST | `/admin/tasks/{task}/reject` | Reject. **Body:** `note` (required, ≤2000). Returns the task to the board. |
 
 `{task}` = task `publicId`. An out-of-order transition (e.g. `/redact` before `/proofread`) returns
@@ -1300,6 +1301,11 @@ awaiting_proofreading → in_proofreading → awaiting_redaction → approved �
 > **`abstract` is mandatory and is written here.** The LLM never produces one, so a generated product
 > has `"abstract": null` until stage 1 is submitted — and a product without an abstract will never be
 > released. Prefill the editor with the abstract field empty; do not paste the body into it.
+
+> **Nothing unproofread is ever published.** Approval is refused for a task with no proofread
+> submission, and `products:release` independently skips any approved product whose task carries
+> none — so raw model output cannot reach subscribers by either route. The release command names
+> what it is holding back and why.
 
 > **Approving does not publish.** The product becomes `approved` and joins the FIFO release queue;
 > a scheduled job takes it live. See [§12](#12-the-content-lifecycle-how-products-appear).

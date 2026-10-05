@@ -43,15 +43,25 @@ class ReleaseService
     }
 
     /**
-     * Approved products the queue cannot take live because they have no
-     * abstract. "Released 0" with a full board is otherwise a mystery.
+     * Approved products the queue cannot take live, and why. "Released 0" with
+     * a full board is otherwise a mystery.
+     *
+     * @return array{abstract: Collection<int, Product>, unproofread: Collection<int, Product>}
      */
-    public function blockedByMissingAbstract(): int
+    public function blocked(): array
     {
-        return Product::query()
+        $approved = Product::query()
             ->where('status', ProductStatus::Approved)
-            ->whereNull('abstract')
-            ->count();
+            ->with('generationTask')
+            ->orderBy('approved_at')
+            ->get();
+
+        return [
+            'abstract' => $approved->filter(fn (Product $product) => $product->abstract === null)->values(),
+            'unproofread' => $approved->filter(
+                fn (Product $product) => $product->generationTask?->proofread_at === null,
+            )->values(),
+        ];
     }
 
     private function release(Product $product): void

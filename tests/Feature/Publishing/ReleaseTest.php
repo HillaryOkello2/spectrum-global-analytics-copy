@@ -2,7 +2,6 @@
 
 use App\Enums\ProductStatus;
 use App\Enums\TaskStatus;
-use App\Models\GenerationTask;
 use App\Models\Product;
 use App\Services\Publishing\ReleaseService;
 
@@ -48,10 +47,7 @@ it('leaves unapproved products alone', function (): void {
 
 it('completes the generation task when its product is released', function (): void {
     $product = Product::factory()->approved()->create();
-    $task = GenerationTask::factory()->create([
-        'product_id' => $product->id,
-        'status' => TaskStatus::Approved,
-    ]);
+    $task = $product->generationTask;
 
     app(ReleaseService::class)->releaseBatch();
 

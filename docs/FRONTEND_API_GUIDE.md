@@ -150,6 +150,7 @@ Domain `code` values you should handle in the UI:
 - `quota_exhausted` (403) — metered limit hit; response includes `meta: { used, limit, access }`. Show an upgrade prompt.
 - `subscription_not_active` (403) — no active subscription.
 - `invalid_task_transition` (409) — admin task board action not allowed from the current state.
+- `product_not_proofread` (409) — Approve refused because nobody submitted the proofread yet.
 - `payment_not_retryable` (409) — the payment is pending or paid, or a newer attempt exists.
 - `payment_pending` / `account_suspended` (403) — login states above.
 

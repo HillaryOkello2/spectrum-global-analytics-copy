@@ -5,6 +5,7 @@ namespace App\Services\Generation;
 use App\Enums\ProductStatus;
 use App\Enums\TaskStatus;
 use App\Exceptions\Domain\InvalidTaskTransitionException;
+use App\Exceptions\Domain\ProductNotProofreadException;
 use App\Jobs\GenerateProductJob;
 use App\Models\GenerationTask;
 use App\Models\Product;
@@ -256,7 +257,18 @@ class GenerationPipeline
     public function approve(GenerationTask $task, User $approver): void
     {
         DB::transaction(function () use ($task): void {
+            // State first, so a task approved from the wrong place still says
+            // so; then the editorial gate.
             $this->transition($task, TaskStatus::Approved);
+
+            // Nothing reaches subscribers that a human has not edited. With the
+            // redaction pass off, the status map alone would allow approving
+            // straight from `in_proofreading` — that is, publishing the model's
+            // raw output — so the proofread submission itself is the gate. The
+            // throw rolls the transition back.
+            if ($task->proofread_at === null) {
+                throw new ProductNotProofreadException;
+            }
 
             $product = $task->product;
 

@@ -2,6 +2,7 @@
 
 use App\Enums\ProductStatus;
 use App\Enums\TaskStatus;
+use App\Exceptions\Domain\ProductNotProofreadException;
 use App\Models\GenerationTask;
 use App\Models\Product;
 use App\Models\User;
@@ -36,7 +37,7 @@ it('holds an approved product back when it has no abstract, and says so', functi
     // This is the exact symptom: a full board and nothing released.
     $this->artisan('products:release')
         ->expectsOutputToContain('Released 0 product(s).')
-        ->expectsOutputToContain('1 approved product(s) are held back because they have no abstract.')
+        ->expectsOutputToContain('1 approved product(s) held back with no abstract')
         ->assertSuccessful();
 });
 
@@ -72,11 +73,10 @@ it('reports a body it cannot lift an abstract from rather than guessing', functi
     expect($product->refresh()->abstract)->toBeNull();
 });
 
-it('derives an abstract when a task is approved without a proofread submission', function () use ($brief): void {
-    // The route into this bug: with the redaction pass off, /approve is legal
-    // straight from in_proofreading, and it never touched the abstract — so an
-    // admin who hits Approve instead of submitting the proofread stranded the
-    // product in the release queue for good.
+it('refuses to approve a product no proofreader has submitted', function () use ($brief): void {
+    // With the redaction pass off, the status map alone makes /approve legal
+    // straight from in_proofreading — which would publish the model's raw
+    // output. The proofread submission is the gate, not the status.
     config(['publishing.redaction' => false]);
 
     $product = Product::factory()->create([
@@ -88,6 +88,29 @@ it('derives an abstract when a task is approved without a proofread submission',
     $task = GenerationTask::factory()->create([
         'product_id' => $product->id,
         'status' => TaskStatus::InProofreading,
+        'proofread_at' => null,
+    ]);
+
+    $approver = User::factory()->create();
+    $approver->assignRole(User::ADMIN);
+
+    expect(fn () => app(GenerationPipeline::class)->approve($task, $approver))
+        ->toThrow(ProductNotProofreadException::class);
+
+    expect($product->refresh()->status)->toBe(ProductStatus::AwaitingProofreading);
+});
+
+it('derives the abstract on an approval that is allowed', function () use ($brief): void {
+    $product = Product::factory()->create([
+        'abstract' => null,
+        'body' => $brief,
+        'status' => ProductStatus::AwaitingRedaction,
+    ]);
+
+    $task = GenerationTask::factory()->create([
+        'product_id' => $product->id,
+        'status' => TaskStatus::AwaitingRedaction,
+        'proofread_at' => now(),
     ]);
 
     $approver = User::factory()->create();
@@ -97,4 +120,16 @@ it('derives an abstract when a task is approved without a proofread submission',
 
     expect($product->refresh()->abstract)->toContain('repricing of sovereign debt')
         ->and($product->status)->toBe(ProductStatus::Approved);
+});
+
+it('never takes an unproofread product live, however it was marked approved', function () use ($brief): void {
+    $product = Product::factory()->approvedUnproofread()->create(['body' => $brief]);
+
+    $this->artisan('products:release')
+        ->expectsOutputToContain('Released 0 product(s).')
+        ->expectsOutputToContain('held back because no proofreader has submitted the document')
+        ->expectsOutputToContain($product->code)
+        ->assertSuccessful();
+
+    expect($product->refresh()->status)->toBe(ProductStatus::Approved);
 });

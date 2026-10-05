@@ -121,6 +121,10 @@ class Product extends Model
         return $query
             ->where('status', ProductStatus::Approved)
             ->whereNotNull('abstract')
+            // Belt and braces with the approval guard: a product whose task
+            // carries no proofread submission is never taken live, however it
+            // came to be marked approved.
+            ->whereHas('generationTask', fn (Builder $task) => $task->whereNotNull('proofread_at'))
             ->orderBy('approved_at');
     }
 
