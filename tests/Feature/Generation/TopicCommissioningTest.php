@@ -9,6 +9,7 @@ use App\Models\Component;
 use App\Models\Topic;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\TopicGenerator;
+use App\Services\Generation\TopicVariableFiller;
 use Illuminate\Support\Facades\Queue;
 
 it('commissions a topic from the component prompt', function (): void {
@@ -133,18 +134,48 @@ it('accepts a topic with variables and no prompt of its own', function (): void 
         ->assertJsonPath('data.variables.PRIMARY_TOPIC', 'The fragmentation of semiconductor supply');
 });
 
-it('rejects a topic with neither a prompt nor variables', function (): void {
-    // It would have nothing to send the model.
-    $component = Component::factory()->create();
+it('accepts a topic filed with nothing but a title and a component', function (): void {
+    // All an editor should have to decide. The cadence comes from the
+    // component and the variables are filled at generation time.
+    $component = Component::factory()->create([
+        'generation_frequency' => Frequency::Weekly,
+        'variables' => ['PRIMARY_TOPIC', 'BYLINE'],
+    ]);
+
+    $this->actingAs(admin())
+        ->postJson(route('api.admin.topics.store'), [
+            'title' => 'The Quiet Repricing of Sovereign Debt',
+            'component' => $component->public_id,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.source', Topic::SOURCE_MANUAL)
+        ->assertJsonPath('data.frequency', Frequency::Weekly->value)
+        ->assertJsonPath('data.title', 'The Quiet Repricing of Sovereign Debt');
+});
+
+it('falls back to a monthly cadence for a component the client gave none', function (): void {
+    $component = Component::factory()->create(['generation_frequency' => null]);
+
+    $this->actingAs(admin())
+        ->postJson(route('api.admin.topics.store'), [
+            'title' => 'A one-off study',
+            'component' => $component->public_id,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.frequency', Frequency::Monthly->value);
+});
+
+it('still needs a prompt for a component that has no template of its own', function (): void {
+    // Nothing to render, so nothing to send the model.
+    $component = Component::factory()->create(['prompt_template' => null]);
 
     $this->actingAs(admin())
         ->postJson(route('api.admin.topics.store'), [
             'title' => 'Nothing to say',
             'component' => $component->public_id,
-            'frequency' => Frequency::Monthly->value,
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('variables');
+        ->assertJsonValidationErrors('prompt_text');
 });
 
 it('still accepts a hand-written prompt', function (): void {
@@ -160,4 +191,35 @@ it('still accepts a hand-written prompt', function (): void {
         ])
         ->assertCreated()
         ->assertJsonPath('data.promptText', 'Write about the thing.');
+});
+
+it('fills the prompt variables an editor did not type', function (): void {
+    $component = Component::factory()->create([
+        'variables' => ['PRIMARY_TOPIC', 'BYLINE'],
+        'fixed_variables' => ['DOCUMENT_TITLE' => 'WEEKLY HIGHLIGHTS'],
+    ]);
+
+    $topic = Topic::factory()->for($component)->create([
+        'title' => 'The Quiet Repricing of Sovereign Debt',
+        'prompt_text' => null,
+        'variables' => null,
+    ]);
+
+    app(TopicVariableFiller::class)->fill($topic);
+
+    $filled = $topic->refresh()->variables;
+
+    // The title answers the subject slot; the model answers the rest; what the
+    // component fixes for the whole series is never asked for.
+    expect($filled['PRIMARY_TOPIC'])->toBe('The Quiet Repricing of Sovereign Debt')
+        ->and($filled['BYLINE'])->toBeString()->not->toBeEmpty()
+        ->and($filled)->not->toHaveKey('DOCUMENT_TITLE');
+});
+
+it('leaves a topic that carries its own prompt alone', function (): void {
+    $topic = Topic::factory()->create(['prompt_text' => 'Write about the thing.', 'variables' => null]);
+
+    app(TopicVariableFiller::class)->fill($topic);
+
+    expect($topic->refresh()->variables)->toBeNull();
 });

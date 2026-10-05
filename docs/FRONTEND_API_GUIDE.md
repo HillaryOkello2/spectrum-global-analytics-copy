@@ -9,6 +9,23 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ✅ Fixed: filing a topic needs only a title and a component (2026-10-05)
+
+`POST /admin/topics` used to reject `{ title, component }` with "The frequency field is required"
+and "Provide variables for the component prompt template, or a prompt_text of your own". Both are
+gone: `frequency` defaults to the component's cadence, and the prompt variables are derived at
+generation time. The payload the portal already sends now works unchanged.
+
+## ⚠️ Changed: M-Pesa now redirects too (2026-10-05)
+
+Live PGW testing settled how the gateway actually collects money, and it changes one thing for you:
+
+- **M-Pesa returns `instructions.checkoutUrl` as well.** PGW's hosted page is what asks for the
+  number and sends the STK push, so **branch on `checkoutUrl` being present, not on
+  `instructions.type`**. If it is there, redirect — whichever method was chosen.
+- **`/payment/return` is reached after M-Pesa too**, not only card. Same page, same polling.
+- Nothing else moved: the payment payload, polling, retry and `failureReason` are unchanged.
+
 ## ✅ Added for analytics-portal (2026-10-01)
 
 Answers to `ANALYTICS_PORTAL_BACKEND_REQUIREMENTS.md`. All additive — nothing you already call
@@ -210,9 +227,10 @@ nested inside a product payload.
   product has `abstract: null` until then, and cannot be released without it.
 - Product Generation Master: `GET/POST /admin/topics` (create a topic to generate from — `component`
   only, no `pillar`), `POST /admin/topics/{topic}/queue` (kick off generation), `GET /admin/generation-queue`.
-  `prompt_text`/`qa_prompt_text` are now **optional**: omit them and the component's client-supplied
-  prompt is used — send `variables` (the placeholder values) instead. Each topic carries
-  `createdBy: { publicId, name }` (null on an auto topic). `DB`, `WH` and `MF` create
+  **`POST /admin/topics` needs only `{ title, component }`.** `frequency` is optional (the
+  component's own cadence is used), and so are `prompt_text`/`qa_prompt_text`/`variables` — the
+  title fills the subject slot and the component's model fills the rest at generation time. Each
+  topic carries `createdBy: { publicId, name }` (null on an auto topic). `DB`, `WH` and `MF` create
   their own topics on a schedule, so expect rows there nobody filed.
 
 > **Approving is not publishing.** An approved product joins a FIFO release queue and goes live on a
@@ -225,13 +243,16 @@ nested inside a product payload.
 
 ## Payments (frontend flow)
 
-Production uses PGW (M-Pesa STK push or a hosted card page); a fake driver stands in locally.
+Production uses PGW. **Both** M-Pesa and card go through its hosted payment page — that page asks for
+the M-Pesa number and sends the STK push, or takes card details. A fake driver stands in locally.
 
 1. Register on a paid tier (or renew / upgrade) → `payment` + `instructions`.
-   - `instructions.type: "mpesa"` → show `instructions.message`; the payer approves on their phone.
-   - `instructions.type: "card"` → send the browser to `instructions.checkoutUrl`. PGW returns the payer
-     to **`/payment/return?payment={publicId}`** on the subscriber portal. Build that page: it only
-     polls, since the redirect itself settles nothing.
+   - **Branch on `instructions.checkoutUrl`, not on `type`.** Present (the normal case, either
+     method) → send the browser there. PGW returns the payer to
+     **`/payment/return?payment={publicId}`** on the subscriber portal — build that page for both
+     methods now, not just card. It only polls, since the redirect itself settles nothing.
+   - Absent → show `instructions.message`; the prompt is already on the payer's phone. That is the
+     local fake gateway, and a backend option for server-side M-Pesa that is off by default.
 2. Poll **`GET /payments/{publicId}/status`** — **no token needed**, because a paid signup has none yet —
    every 3–5 seconds until `successful` (the signup can now log in) or `failed`.
 3. On `failed`, show `failureReason` (`declined`, `expired`, `gateway_error`, `amount_mismatch`) and offer

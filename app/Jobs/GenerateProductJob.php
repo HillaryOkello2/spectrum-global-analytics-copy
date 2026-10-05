@@ -6,6 +6,7 @@ use App\Jobs\Middleware\FailOnTokenCeiling;
 use App\Models\GenerationTask;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
+use App\Services\Generation\TopicVariableFiller;
 use App\Services\Llm\LlmManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -43,9 +44,18 @@ class GenerateProductJob implements ShouldQueue
         return [new FailOnTokenCeiling];
     }
 
-    public function handle(GenerationPipeline $pipeline, LlmManager $llm, PromptRenderer $renderer): void
-    {
+    public function handle(
+        GenerationPipeline $pipeline,
+        LlmManager $llm,
+        PromptRenderer $renderer,
+        TopicVariableFiller $filler,
+    ): void {
         $this->task->refresh();
+
+        // A topic filed with just a title has no variables yet, and the
+        // component's template — and its own product title — cannot render
+        // without them. Filled once, then stored, so a retry renders the same.
+        $filler->fill($this->task->topic);
 
         // Reserves the product code first — the document prints it as its
         // [DOCUMENT_REF], so the prompt has to be rendered against it.

@@ -6,8 +6,6 @@ use App\Enums\Frequency;
 use App\Exceptions\TopicGenerationFailedException;
 use App\Models\Component;
 use App\Models\Topic;
-use App\Services\Llm\LlmManager;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Commissions a topic for a recurring component.
@@ -21,7 +19,7 @@ use Illuminate\Support\Facades\Log;
 class TopicGenerator
 {
     public function __construct(
-        private readonly LlmManager $llm,
+        private readonly VariableRequest $variables,
         private readonly PromptRenderer $renderer,
     ) {}
 
@@ -34,7 +32,11 @@ class TopicGenerator
             throw TopicGenerationFailedException::notAutomated($component);
         }
 
-        $variables = $this->requestVariables($component);
+        $variables = $this->variables->request(
+            $component,
+            $component->topic_prompt,
+            $component->variables ?? [],
+        );
 
         $topic = new Topic([
             'component_id' => $component->id,
@@ -57,68 +59,5 @@ class TopicGenerator
         $topic->save();
 
         return $topic;
-    }
-
-    /**
-     * Ask the model for this edition's variables and validate the shape before
-     * anything is persisted. A malformed reply fails the task rather than
-     * producing a document with an empty subject.
-     *
-     * @return array<string, string>
-     */
-    private function requestVariables(Component $component): array
-    {
-        $raw = $this->llm->for($component->assignedLlmProvider)
-            ->generate($component->topic_prompt)
-            ->text;
-
-        $decoded = json_decode($this->stripFences($raw), true);
-
-        if (! is_array($decoded)) {
-            Log::warning('Topic generation returned non-JSON', [
-                'component' => $component->code,
-                'response' => str($raw)->limit(500)->value(),
-            ]);
-
-            throw TopicGenerationFailedException::notJson($component);
-        }
-
-        $expected = $component->variables ?? [];
-        $missing = array_diff($expected, array_keys($decoded));
-
-        if ($missing !== []) {
-            throw TopicGenerationFailedException::missingKeys($component, array_values($missing));
-        }
-
-        // Ignore anything extra the model volunteered, and flatten to strings so
-        // a nested object can never reach the prompt as "Array".
-        $variables = [];
-
-        foreach ($expected as $key) {
-            $value = $decoded[$key];
-
-            if (! is_scalar($value)) {
-                throw TopicGenerationFailedException::nonScalar($component, $key);
-            }
-
-            $variables[$key] = trim((string) $value);
-        }
-
-        return $variables;
-    }
-
-    /**
-     * Models often wrap JSON in a ```json fence despite being told not to.
-     * Cheap to tolerate; expensive to fail a scheduled run over.
-     */
-    private function stripFences(string $raw): string
-    {
-        $trimmed = trim($raw);
-
-        if (! str_starts_with($trimmed, '```')) {
-            return $trimmed;
-        }
-
-        return trim(preg_replace('/^```[a-zA-Z]*\s*|\s*```$/', '', $trimmed));
     }
 }

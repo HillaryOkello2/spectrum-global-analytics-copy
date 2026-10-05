@@ -506,15 +506,23 @@ Create an account on a chosen tier.
     },
     "instructions": {
       "type": "mpesa",
-      "message": "Approve the M-Pesa prompt sent to 254712345678 to pay KES 6,449."
+      "checkoutUrl": "https://payments.techbizafrica.com/gateway/index.html?token=5dcbf577…",
+      "message": "Open the payment page and enter your M-Pesa number to receive the prompt."
     }
   }
 }
 ```
-`instructions` depends on the method:
-- `mpesa`: `{ type, message }`. Show the message; the payer approves the prompt on their phone.
-- `card`: `{ type, checkoutUrl, message }`. Send the browser to `checkoutUrl`, PGW's hosted card page.
-  PGW brings the payer back to `{subscriber portal}/payment/return?payment={publicId}`.
+**Branch on `instructions.checkoutUrl`, not on `type`.** Both methods normally carry one:
+
+- `checkoutUrl` present (`mpesa` **and** `card`) — send the browser there. It is PGW's hosted payment
+  page, which asks for the M-Pesa number and sends the STK push itself, or takes card details.
+  PGW then returns the payer to `{subscriber portal}/payment/return?payment={publicId}`.
+- `checkoutUrl` absent (`mpesa` only, when the backend is configured to push server-side with
+  `PGW_MPESA_MODE=stk`) — show `message`; the prompt is already on the payer's phone, no redirect.
+  Off by default.
+
+`type` still says which method was chosen, for your copy and iconography. The fake gateway used
+locally returns `{ type, message }` with no `checkoutUrl`, which is the same no-redirect branch.
 
 `amount`/`currency` are what the payer is charged (KES with PGW); `listAmount`/`listCurrency` are the
 tier price it was converted from. If the gateway won't start the payment, the response is still
@@ -1347,10 +1355,18 @@ complete article `body` so the proofreader can review everything:
 |---|---|
 | `title` | required, string, ≤255 |
 | `component` | required, component `publicId` |
-| `frequency` | required, one of `daily`/`weekly`/`monthly`/`quarterly` |
+| `frequency` | **optional**, one of `daily`/`weekly`/`monthly`/`quarterly`. Omit it and the component's own cadence is used, or `monthly` for a component the client gave none |
 | `prompt_text` | optional, string — a prompt of this topic's own. Omit it to render the component's client-supplied template instead, and send `variables` |
 | `qa_prompt_text` | optional, string — same rule |
 | `variables` | optional object of the component's declared placeholders, e.g. `{"PRIMARY_TOPIC": "…"}`. Required when `prompt_text` is omitted |
+
+**A title and a component are enough.** `POST /admin/topics` with just
+`{ "title": "…", "component": "<publicId>" }` is valid and is the normal case: the cadence comes
+from the component, and the prompt variables are filled when generation runs — the title answers
+whichever slot means "the subject" (`PRIMARY_TOPIC`, or `DOCUMENT_TITLE`, or `PROJECT_FILE`), and
+the component's own model is asked for the rest (a byline, the four themes of a Close-Circuit
+brief). Send `variables` yourself only to override that. The one case that still needs
+`prompt_text` is a component with no prompt template of its own, and the 422 says so by name.
 
 **`createdBy`** — every topic payload carries `{ publicId, name }` for the admin who filed it,
 resolved server-side so a topics editor never needs `manage users` to show a name. It is **`null` on
@@ -1376,14 +1392,16 @@ In local/UAT you can simulate the gateway yourself — see below.
 
 ## 11. The payment flow (step by step)
 
-Production uses **PGW**, TechBiz's gateway: an M-Pesa STK push, or PGW's hosted card page. Locally a
+Production uses **PGW**, TechBiz's gateway. Both M-Pesa and card go through its **hosted payment
+page**: the page collects the M-Pesa number and sends the STK push, or takes card details. Locally a
 **fake gateway** stands in, so the whole flow works end to end.
 
 **Paid subscription:**
 1. `POST /auth/register` with a paid `tier` → `data.payment.publicId` and `data.instructions`.
-   - M-Pesa: show `instructions.message`; the payer approves the prompt on their phone.
-   - Card: send the browser to `instructions.checkoutUrl`. PGW brings the payer back to
-     `/payment/return?payment={publicId}` on the subscriber portal.
+   - `instructions.checkoutUrl` present (the normal case, both methods): send the browser there.
+     PGW brings the payer back to `/payment/return?payment={publicId}` on the subscriber portal.
+   - No `checkoutUrl` (server-side M-Pesa push, off by default; and the local fake gateway): show
+     `instructions.message` — the prompt is already on their phone.
 2. The account is `pending`; the user **cannot log in yet** (`403 payment_pending`, with `meta.payment`).
 3. Poll `GET /payments/{publicId}/status` (no token) every few seconds.
 4. When the money arrives the gateway calls the webhook and the status turns `successful`: the user is
@@ -1403,7 +1421,8 @@ Production uses **PGW**, TechBiz's gateway: an M-Pesa STK push, or PGW's hosted 
 **Freemium:** no payment — `POST /auth/register` returns a token and an active account immediately. Skip straight to using it.
 
 ### The `/payment/return` page (subscriber portal)
-PGW's card checkout redirects here with `?payment={publicId}`. The redirect itself proves nothing:
+PGW's hosted page redirects here with `?payment={publicId}` after **either** payment method. The
+redirect itself proves nothing:
 only the webhook settles a payment. The page polls the status and shows pending, success (on to
 login or the dashboard) or failure (offer a retry). The path is configurable
 (`FRONTEND_PAYMENT_RETURN_PATH`) if the portal names it differently.

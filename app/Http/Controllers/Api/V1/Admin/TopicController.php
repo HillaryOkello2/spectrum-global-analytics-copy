@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Enums\Frequency;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreTopicRequest;
 use App\Http\Resources\TopicResource;
@@ -33,8 +34,13 @@ class TopicController extends Controller
         $component = Component::where('public_id', $request->validated('component'))->firstOrFail();
 
         $topic = Topic::create([
-            ...$request->safe()->except('component'),
+            ...$request->safe()->except(['component', 'frequency']),
             'component_id' => $component->id,
+            // The editor need not pick a cadence: the component has one, and a
+            // component the client gave none recurs monthly (as auto topics do).
+            'frequency' => $request->validated('frequency')
+                ?? $component->generation_frequency
+                ?? Frequency::Monthly,
             // Recorded on the row, so the topics table can name its author
             // without the caller also holding `manage users`.
             'created_by' => $request->user()->id,
