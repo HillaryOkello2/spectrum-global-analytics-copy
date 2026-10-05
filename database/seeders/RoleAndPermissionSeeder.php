@@ -17,6 +17,7 @@ class RoleAndPermissionSeeder extends Seeder
             'access admin portal',
             'manage users',
             'manage subscribers',
+            'manage subscription tiers',
             'view audit logs',
             'view analytics',
             'view transaction history',

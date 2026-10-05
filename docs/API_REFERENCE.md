@@ -992,6 +992,7 @@ Entry to `/admin/*` requires the **`access admin portal`** permission, and each 
 | Section | Permission |
 |---|---|
 | `/admin/users`, `/admin/roles`, `/admin/permissions` | `manage users` |
+| `/admin/tiers` | `manage subscription tiers` |
 | `/admin/subscribers` | `manage subscribers` |
 | `/admin/audit-logs` | `view audit logs` |
 | `/admin/transactions/*` | `view transaction history` |
@@ -1104,6 +1105,64 @@ Every `PUT` replaces wholesale rather than adding — send the complete desired 
 | 403 | `role_escalation` | Only a `System Admin` may grant or revoke the `System Admin` role, or modify a user who already holds it. |
 | 422 | `last_system_admin` | Refused: this would remove the only remaining `System Admin`. Promote someone else first. |
 | 422 | validation | Unknown or duplicate role name, or an unknown permission name. |
+
+### Subscription tiers (FR-41)
+
+What each tier costs and whether it can still be bought. Requires
+`manage subscription tiers` — a separate permission from `manage subscribers`, because changing a
+price is a commercial act rather than account administration.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin/tiers` | Every tier in `sortOrder`, **including inactive ones**, each with its allocations and `subscribersCount`. |
+| GET | `/admin/tiers/{tier}` | One tier. `{tier}` = tier `publicId`. |
+| PATCH | `/admin/tiers/{tier}` | Edit it. Every field optional. |
+| GET | `/admin/tiers/{tier}/allocations` | What this tier unlocks, component by component. |
+| PUT | `/admin/tiers/{tier}/allocations` | **Replace** the whole matrix, including the metering. |
+
+**PATCH body (all optional):** `name` (unique), `price` (≥ 0), `currency` (3 letters, uppercase),
+`billing_period` (`monthly` only), `is_active`, `sort_order`.
+
+What a change does, and does not, do:
+
+- **It applies to the next payment, never to a term already paid for.** Price is read at signup,
+  renewal and upgrade; a running subscription keeps the term it was charged for and picks the new
+  price up when it renews.
+- **`is_active: false` withdraws the tier from sale**: it disappears from the public `GET /tiers`,
+  and signup or upgrade onto it is refused with `422 tier_not_purchasable`. Subscribers already on
+  it keep their access and can still renew.
+- **`price: 0` makes it free**, which is how Freemium works — signup and renewal then skip the
+  gateway entirely. Setting a paid tier to 0 therefore lets its subscribers renew for nothing.
+- `billing_period` accepts only `monthly`: terms are added a month at a time throughout billing, so
+  any other value would be a label that disagrees with what is charged.
+
+Tier payloads also carry `isActive` and `sortOrder` (and `subscribersCount` on admin listings).
+
+**PUT `/admin/tiers/{tier}/allocations` body:**
+
+```json
+{
+  "allocations": [
+    { "component": "DB", "access_type": "metered", "monthly_limit": 10 },
+    { "component": "WH", "access_type": "unlimited" },
+    { "component": "9f8e7d6c-…", "access_type": "denied" }
+  ]
+}
+```
+
+- `component` is a component **`code` or `publicId`** — both work, as everywhere else.
+- `access_type` is `unlimited`, `metered` or `denied`.
+- `monthly_limit` is **required on `metered`** and **refused on the other two**: metering against
+  no limit would deny everything, and a limit on an unlimited allocation is a number nobody reads.
+- The submission is the **whole matrix**. A component left out loses its allocation, and no
+  allocation is treated exactly like `denied`. `"allocations": []` is valid and opens nothing.
+
+Metering is **per component, per calendar month**, counted from the subscriber's unlocks. Lowering a
+limit mid-month applies immediately: a subscriber who has already read more than the new limit is
+denied for the rest of that month (they keep anything they had already unlocked — re-reading never
+costs quota again). Raising it takes effect just as immediately.
+
+Both endpoints return the full `TierResource`, so the screen can re-render from the response.
 
 ### Subscribers (FR-41)
 

@@ -18,6 +18,10 @@ class TierResource extends JsonResource
             'currency' => $this->currency,
             'charge' => $this->charge(),
             'billingPeriod' => $this->billing_period,
+            'isActive' => $this->is_active,
+            'sortOrder' => $this->sort_order,
+            // Admin listings count them; the public pricing page does not.
+            'subscribersCount' => $this->whenCounted('subscriptions', fn ($count) => (int) $count),
             'allocations' => $this->whenLoaded('allocations', function () {
                 return $this->allocations->map(fn ($allocation) => [
                     'componentCode' => $allocation->component->code,

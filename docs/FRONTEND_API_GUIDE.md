@@ -221,6 +221,15 @@ nested inside a product payload.
   for the vocabulary. Admins create their own roles (e.g. a Proofreader limited to the task board);
   the three built-in roles are flagged `isSystem` and reject edits with `protected_role`.
   Admin-portal access is permission-gated per section — see the table in API_REFERENCE.md §9.
+- Subscription tiers: `GET /admin/tiers` (inactive included, with `subscribersCount`),
+  `GET/PATCH /admin/tiers/{tier}` — `name`, `price`, `currency`, `is_active`, `sort_order`, all
+  optional. Needs the **`manage subscription tiers`** permission. Price changes apply to the next
+  payment, not to a running term; `is_active: false` withdraws a tier from sale without touching its
+  current subscribers.
+- Tier access matrix: `GET/PUT /admin/tiers/{tier}/allocations` — **replace the whole set** of
+  `{ component, access_type, monthly_limit }`. `component` takes a code or publicId;
+  `monthly_limit` is required on `metered` and refused otherwise; anything left out of the
+  submission is no longer unlocked. Takes effect on the next read, including mid-month.
 - Subscribers: `GET /admin/subscribers?search=&status=&tier=`, `GET/PATCH /admin/subscribers/{subscriber}`.
 - Audit log: `GET /admin/audit-logs?description=&from=&to=`.
 - Transaction history: `GET /admin/transactions?search=&status=&method=&gateway=&subscriber=&from=&to=`,

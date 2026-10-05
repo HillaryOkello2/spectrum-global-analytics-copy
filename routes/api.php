@@ -82,6 +82,18 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                 Route::apiResource('permissions', Admin\PermissionController::class)->only('index');
             });
 
+            // What each tier costs and whether it can still be bought. Separate
+            // from `manage subscribers`: changing a price is a commercial act,
+            // not account administration.
+            Route::middleware('permission:manage subscription tiers')->group(function (): void {
+                Route::apiResource('tiers', Admin\TierController::class)
+                    ->only(['index', 'show', 'update']);
+                // The access matrix is read and replaced whole, like a role's
+                // permissions: a component left out is one the tier does not open.
+                Route::apiSingleton('tiers.allocations', Admin\Tiers\TierAllocationController::class)
+                    ->only(['show', 'update']);
+            });
+
             Route::middleware('permission:manage subscribers')->group(function (): void {
                 Route::apiResource('subscribers', Admin\SubscriberController::class)
                     ->only(['index', 'show', 'update'])
