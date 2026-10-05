@@ -17,6 +17,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Worker queues
+    |--------------------------------------------------------------------------
+    |
+    | `queue:work` with no --queue processes the connection's default queue and
+    | nothing else, and there is no wildcard — every queue a worker should serve
+    | has to be named. These two lists are what routes/console.php starts.
+    |
+    | They are split so a 56-page research paper cannot hold up a payment
+    | receipt: the `default` worker (mail, notifications) runs separately from
+    | the per-component generation queues. Within the generation list the order
+    | is the priority order, pulse products first.
+    |
+    | A new component means a new `llm-<code>` queue; add it here, or its jobs
+    | will sit in the table unworked. GenerationQueueCoverageTest fails if you
+    | forget.
+    |
+    */
+
+    'worker_queues' => [
+        'default' => env('QUEUE_WORKER_QUEUES', 'default'),
+        'generation' => env('QUEUE_WORKER_LLM_QUEUES', 'llm-db,llm-wh,llm-mf,llm-cc,llm-es,llm-bs,llm-rp,llm-wp,llm-hm'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Queue Connections
     |--------------------------------------------------------------------------
     |
