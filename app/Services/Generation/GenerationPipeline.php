@@ -258,9 +258,15 @@ class GenerationPipeline
         DB::transaction(function () use ($task): void {
             $this->transition($task, TaskStatus::Approved);
 
-            $task->product->update([
+            $product = $task->product;
+
+            $product->update([
                 'status' => ProductStatus::Approved,
                 'approved_at' => now(),
+                // An approved product with no abstract can never be released:
+                // the FIFO queue skips it, silently. Derive one from the body
+                // rather than let it sit in the queue for good.
+                'abstract' => $product->abstract ?? $this->abstracts->extract((string) $product->body),
             ]);
         });
 

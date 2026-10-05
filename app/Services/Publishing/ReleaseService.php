@@ -42,6 +42,18 @@ class ReleaseService
         });
     }
 
+    /**
+     * Approved products the queue cannot take live because they have no
+     * abstract. "Released 0" with a full board is otherwise a mystery.
+     */
+    public function blockedByMissingAbstract(): int
+    {
+        return Product::query()
+            ->where('status', ProductStatus::Approved)
+            ->whereNull('abstract')
+            ->count();
+    }
+
     private function release(Product $product): void
     {
         $product->update([

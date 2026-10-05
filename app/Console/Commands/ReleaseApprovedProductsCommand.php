@@ -23,6 +23,13 @@ class ReleaseApprovedProductsCommand extends Command
             $this->line("  {$product->code}  {$product->title}");
         }
 
+        $blocked = $releases->blockedByMissingAbstract();
+
+        if ($blocked > 0) {
+            $this->warn("{$blocked} approved product(s) are held back because they have no abstract.");
+            $this->warn('Run `php artisan products:backfill-abstracts` to derive one from the body.');
+        }
+
         return self::SUCCESS;
     }
 }
