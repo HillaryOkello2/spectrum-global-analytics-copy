@@ -31,6 +31,11 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="LLM_FAKE" value="true"/>
         <env name="PAYMENT_GATEWAY" value="fake"/>
+        <!-- Billing config is pinned so the suite never reads the developer's
+             .env: a local PAYMENT_CHARGE_CURRENCY would otherwise convert tier
+             prices and break assertions that have nothing to do with payments. -->
+        <env name="PAYMENT_CHARGE_CURRENCY" value=""/>
+        <env name="PAYMENT_USD_KES_RATE" value=""/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

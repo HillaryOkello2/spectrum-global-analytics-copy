@@ -35,7 +35,9 @@ class PaymentServiceProvider extends ServiceProvider
     {
         $config = config('payments.pgw');
 
-        $required = ['base_url', 'merchant_key', 'merchant_secret', 'account_id', 'callback_key', 'callback_secret'];
+        // The callback pair is absent from this list on purpose: it falls back
+        // to the merchant credential in config/payments.php.
+        $required = ['base_url', 'merchant_key', 'merchant_secret', 'account_id'];
         $missing = array_keys(array_filter(Arr::only($config, $required), fn ($value) => blank($value)));
 
         if ($missing !== []) {

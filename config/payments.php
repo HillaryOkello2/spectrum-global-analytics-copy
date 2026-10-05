@@ -65,14 +65,30 @@ return [
         'merchant_secret' => env('PGW_MERCHANT_SECRET'),
         'account_id' => env('PGW_ACCOUNT_ID'),
 
+        // How M-Pesa is collected. "checkout" hands the payer PGW's hosted
+        // page, which asks for the number and sends the STK push itself — the
+        // flow proven against payments.techbizafrica.com. "stk" pushes from
+        // here via Token + MStk instead, which needs MStk enabled for the
+        // merchant account and gives the payer no redirect.
+        'mpesa_mode' => env('PGW_MPESA_MODE', 'checkout'),
+
         // PGW authenticates its callbacks with these, sent as
-        // `Authorization: Bearer base64(key:secret)`.
-        'callback_key' => env('PGW_CALLBACK_KEY'),
-        'callback_secret' => env('PGW_CALLBACK_SECRET'),
+        // `Authorization: Bearer base64(key:secret)`. Some merchants are issued
+        // a dedicated pair; where none is, PGW signs with the merchant
+        // credential, so that is what these fall back to.
+        'callback_key' => env('PGW_CALLBACK_KEY') ?: env('PGW_MERCHANT_KEY'),
+        'callback_secret' => env('PGW_CALLBACK_SECRET') ?: env('PGW_MERCHANT_SECRET'),
 
         // Defaults to this app's webhook route. Override to point PGW at a
         // tunnel while testing against the sandbox.
         'callback_url' => env('PGW_CALLBACK_URL'),
+
+        // An unguessable string of our own, added to the callback URL we hand
+        // PGW and required back on every callback. PGW's own sample receiver
+        // authenticates nothing, so where no callback credential is issued this
+        // is what proves a callback came from the URL we gave them. Generate
+        // one with `php artisan str:random 40`.
+        'callback_token' => env('PGW_CALLBACK_TOKEN'),
 
         // Optional allowlist of PGW's callback source IPs, comma-separated.
         'callback_ips' => array_values(array_filter(array_map(

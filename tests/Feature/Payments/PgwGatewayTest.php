@@ -24,6 +24,8 @@ beforeEach(function (): void {
             'callback_secret' => 'callback-secret',
             'callback_url' => null,
             'callback_ips' => [],
+            'callback_token' => null,
+            'mpesa_mode' => 'checkout',
             'order_prefix' => 'SGA-',
             'timeout' => 30,
         ],
@@ -80,7 +82,10 @@ function pgwCallback(Payment $payment, array $overrides = [], ?string $auth = nu
 
 // ---------------------------------------------------------------- initiation
 
-it('sends a paid signup an M-Pesa prompt for whole shillings', function (): void {
+it('pushes M-Pesa from here in stk mode, for whole shillings', function (): void {
+    config(['payments.pgw.mpesa_mode' => 'stk']);
+    app()->forgetInstance(PaymentGateway::class);
+
     fakePgw();
 
     pgwRegister('mpesa')
@@ -109,6 +114,89 @@ it('sends a paid signup an M-Pesa prompt for whole shillings', function (): void
         ->and($payment->phone)->toBe('0712 345 678');
 });
 
+it('sends M-Pesa payers to the hosted page by default, which collects the number', function (): void {
+    // PGW's hosted page asks for the M-Pesa number and sends the STK push
+    // itself; that is the flow the merchant account is set up for.
+    fakePgw();
+
+    pgwRegister('mpesa')
+        ->assertCreated()
+        ->assertJsonPath('data.payment.status', 'pending')
+        ->assertJsonPath('data.instructions.type', 'mpesa')
+        ->assertJsonPath('data.instructions.checkoutUrl', 'https://pgw.test/pgw/gateway/index.html?token=chk-123');
+
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/Checkout/')
+        && $request['orderAmount'] === 6449
+        && $request['mobile'] === '254712345678');
+
+    Http::assertNotSent(fn (Request $request) => str_ends_with($request->url(), '/MStk/'));
+});
+
+it('puts our callback token in the URL it gives PGW, and takes it back as proof', function (): void {
+    // PGW's own sample receiver authenticates nothing, so where no callback
+    // credential is issued, this token is what makes a callback trustworthy.
+    config(['payments.pgw.callback_token' => 'tok-secret-123']);
+    app()->forgetInstance(PaymentGateway::class);
+
+    fakePgw();
+    pgwRegister('card');
+
+    Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/Checkout/')
+        && str_contains((string) $request['callbackUrl'], 't=tok-secret-123'));
+
+    $payment = Payment::firstOrFail();
+
+    // No Authorization header at all: the token in the URL carries it.
+    $this->postJson(route('api.webhooks.payments', 'pgw').'?t=tok-secret-123', [
+        'status' => 'success',
+        'BillReference' => $payment->gateway_ref,
+        'AmountPaid' => '6449',
+        'TransactionCode' => 'SGX1234ABC',
+    ])->assertOk()->assertJsonPath('status', 'successful');
+
+    expect($payment->refresh()->status)->toBe(PaymentStatus::Successful);
+});
+
+it('rejects a callback carrying the wrong URL token', function (): void {
+    config(['payments.pgw.callback_token' => 'tok-secret-123']);
+    app()->forgetInstance(PaymentGateway::class);
+
+    fakePgw();
+    pgwRegister('card');
+    $payment = Payment::firstOrFail();
+
+    $this->postJson(route('api.webhooks.payments', 'pgw').'?t=wrong', [
+        'status' => 'success',
+        'BillReference' => $payment->gateway_ref,
+    ])->assertUnauthorized();
+
+    expect($payment->refresh()->status)->toBe(PaymentStatus::Pending);
+});
+
+it('matches a callback on our meta when it carries no BillReference', function (): void {
+    // PGW's sample receiver reads `meta`, not BillReference, so a callback
+    // without one has to settle anyway.
+    fakePgw();
+    pgwRegister('card');
+    $payment = Payment::firstOrFail();
+
+    pgwCallback($payment, [
+        'BillReference' => null,
+        'meta' => json_encode(['payment' => $payment->public_id]),
+    ])->assertOk()->assertJsonPath('status', 'successful');
+
+    expect($payment->refresh()->status)->toBe(PaymentStatus::Successful);
+});
+
+it('refuses a callback that identifies no payment at all', function (): void {
+    fakePgw();
+    pgwRegister('card');
+
+    pgwCallback(Payment::firstOrFail(), ['BillReference' => null, 'meta' => 'test'])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'payment_callback_mismatch');
+});
+
 it('sends card payers to the hosted checkout, returning them to the portal', function (): void {
     fakePgw();
 
@@ -130,7 +218,8 @@ it('sends card payers to the hosted checkout, returning them to the portal', fun
 });
 
 it('fails the payment, not the signup, when PGW refuses it', function (): void {
-    fakePgw(mstk: ['status' => 'failed', 'message' => 'Invalid account']);
+    // The real shape of a bad merchant credential: {"status":"failed","message":"Invalid User"}.
+    fakePgw(checkout: ['status' => 'failed', 'message' => 'Invalid User']);
 
     pgwRegister('mpesa')
         ->assertCreated()

@@ -54,10 +54,15 @@ class PgwGatewayDriver implements PaymentGateway
             );
         }
 
-        return match ($payment->method) {
-            PaymentMethod::Mpesa => $this->stkPush($payment),
-            PaymentMethod::Card => $this->checkout($payment),
-        };
+        // Card always goes to the hosted page. M-Pesa goes there too by
+        // default: that page collects the number and sends the STK push, which
+        // is the flow this merchant account is set up for. Set
+        // PGW_MPESA_MODE=stk to push from here instead.
+        if ($payment->method === PaymentMethod::Mpesa && $this->config['mpesa_mode'] === 'stk') {
+            return $this->stkPush($payment);
+        }
+
+        return $this->checkout($payment, $payment->method);
     }
 
     public function parseCallback(Request $request): CallbackResult
@@ -66,9 +71,16 @@ class PgwGatewayDriver implements PaymentGateway
 
         $reference = $request->input('BillReference');
 
-        if (! is_string($reference) || $reference === '') {
-            throw new PaymentCallbackMismatchException('Missing BillReference in callback payload.');
+        // PGW's own sample receiver matches on `meta` rather than
+        // BillReference, so a callback may well arrive without one. We put the
+        // payment's publicId in meta on the way out for exactly this case.
+        $paymentPublicId = $this->paymentFromMeta($request->input('meta'));
+
+        if ((! is_string($reference) || $reference === '') && $paymentPublicId === null) {
+            throw new PaymentCallbackMismatchException('Callback carried neither a BillReference nor our meta.');
         }
+
+        $reference = is_string($reference) ? $reference : '';
 
         $successful = strtolower((string) $request->input('status')) === 'success';
         $amount = $this->amountPaid($request->input('AmountPaid'));
@@ -81,6 +93,7 @@ class PgwGatewayDriver implements PaymentGateway
 
         return new CallbackResult(
             gatewayRef: $reference,
+            paymentPublicId: $paymentPublicId,
             successful: $successful,
             // The body repeats the callback credentials; they are not audit data.
             raw: $request->except(['key', 'secret']),
@@ -116,12 +129,19 @@ class PgwGatewayDriver implements PaymentGateway
         ]);
     }
 
-    private function checkout(Payment $payment): PaymentInitiation
+    /**
+     * PGW's hosted payment page. It returns a session token; the payer is sent
+     * to gateway/index.html with it, picks M-Pesa or card there, and the page
+     * takes it from there — including the STK push.
+     */
+    private function checkout(Payment $payment, PaymentMethod $method): PaymentInitiation
     {
+        $mobile = $payment->phone ?? $payment->user->phone;
+
         $response = $this->http()->withToken($this->merchantCredential())->post('apis/merchant/Checkout/', [
             'accId' => $this->config['account_id'],
             'email' => $payment->user->email,
-            'mobile' => KenyanMsisdn::normalise($payment->user->phone) ?? $payment->user->phone,
+            'mobile' => KenyanMsisdn::normalise($mobile) ?? $mobile,
             'orderRef' => $payment->gateway_ref,
             'currency' => 'KES',
             'orderAmount' => $this->shillings($payment),
@@ -130,13 +150,15 @@ class PgwGatewayDriver implements PaymentGateway
             'meta' => $this->meta($payment),
         ]);
 
-        $this->ensureAccepted($response, 'card checkout');
+        $this->ensureAccepted($response, 'checkout');
 
         return new PaymentInitiation([
-            'type' => PaymentMethod::Card->value,
+            'type' => $method->value,
             'checkoutUrl' => rtrim($this->config['base_url'], '/').'/gateway/index.html?'
-                .http_build_query(['token' => $this->requireToken($response, 'card checkout')]),
-            'message' => 'Complete the card payment on the secure checkout page.',
+                .http_build_query(['token' => $this->requireToken($response, 'checkout')]),
+            'message' => $method === PaymentMethod::Mpesa
+                ? 'Open the payment page and enter your M-Pesa number to receive the prompt.'
+                : 'Complete the card payment on the secure checkout page.',
         ]);
     }
 
@@ -210,6 +232,15 @@ class PgwGatewayDriver implements PaymentGateway
             throw new PaymentCallbackUnauthorizedException('Callback source is not allowed.');
         }
 
+        // The token we put in the callback URL, when one is configured. PGW's
+        // sample receiver verifies nothing at all, so for a merchant issued no
+        // callback credential this is the check that works.
+        $token = $this->config['callback_token'];
+
+        if (filled($token) && hash_equals((string) $token, (string) $request->query('t', ''))) {
+            return;
+        }
+
         $decoded = base64_decode((string) $request->bearerToken(), true);
         [$key, $secret] = array_pad(explode(':', (string) $decoded, 2), 2, '');
 
@@ -217,6 +248,19 @@ class PgwGatewayDriver implements PaymentGateway
         $secretMatches = hash_equals((string) $this->config['callback_secret'], $secret);
 
         if ($key === '' || $secret === '' || ! $keyMatches || ! $secretMatches) {
+            // Enough to tell a wrong credential from an unexpected scheme on
+            // the first live callback, without writing either half to a log.
+            Log::warning('Rejected a PGW callback.', [
+                'ip' => $request->ip(),
+                'authorization_scheme' => Str::before((string) $request->header('Authorization'), ' ') ?: 'none',
+                'credential_decoded' => $decoded !== false,
+                'key_matches' => $keyMatches,
+                'secret_matches' => $secretMatches,
+                'body_carried_credentials' => $request->has('key') && $request->has('secret'),
+                'url_token_expected' => filled($this->config['callback_token']),
+                'url_token_present' => $request->query('t') !== null,
+            ]);
+
             throw new PaymentCallbackUnauthorizedException;
         }
     }
@@ -233,6 +277,20 @@ class PgwGatewayDriver implements PaymentGateway
         return is_numeric($value) ? number_format((float) $value, 2, '.', '') : null;
     }
 
+    /**
+     * `meta` goes out as the JSON string PGW passes straight back.
+     *
+     * @return string|null the payment publicId it carried, if any
+     */
+    private function paymentFromMeta(mixed $meta): ?string
+    {
+        $decoded = is_string($meta) ? json_decode($meta, true) : $meta;
+
+        return is_array($decoded) && is_string($decoded['payment'] ?? null)
+            ? $decoded['payment']
+            : null;
+    }
+
     private function shillings(Payment $payment): int
     {
         return (int) round((float) $payment->amount);
@@ -240,7 +298,12 @@ class PgwGatewayDriver implements PaymentGateway
 
     private function callbackUrl(): string
     {
-        return $this->config['callback_url'] ?: route('api.webhooks.payments', 'pgw');
+        $url = $this->config['callback_url'] ?: route('api.webhooks.payments', 'pgw');
+        $token = $this->config['callback_token'];
+
+        return filled($token)
+            ? $url.(str_contains($url, '?') ? '&' : '?').http_build_query(['t' => $token])
+            : $url;
     }
 
     /**

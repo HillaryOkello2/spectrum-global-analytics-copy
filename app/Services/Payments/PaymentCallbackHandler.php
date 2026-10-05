@@ -31,10 +31,24 @@ class PaymentCallbackHandler
         $result = $this->gateway->parseCallback($request);
 
         return DB::transaction(function () use ($result): Payment {
+            // By our reference first; failing that, by the publicId the
+            // gateway echoed back in `meta` — PGW's own sample receiver
+            // matches on meta rather than the reference, so both can happen.
             $payment = Payment::query()
-                ->where('gateway_ref', $result->gatewayRef)
+                ->when(
+                    $result->gatewayRef !== '',
+                    fn ($query) => $query->where('gateway_ref', $result->gatewayRef),
+                    fn ($query) => $query->whereRaw('1 = 0'),
+                )
                 ->lockForUpdate()
                 ->first();
+
+            if ($payment === null && $result->paymentPublicId !== null) {
+                $payment = Payment::query()
+                    ->where('public_id', $result->paymentPublicId)
+                    ->lockForUpdate()
+                    ->first();
+            }
 
             if ($payment === null) {
                 throw new PaymentCallbackMismatchException;
