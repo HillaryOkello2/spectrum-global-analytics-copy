@@ -15,7 +15,9 @@ Schedule::command(
 )->everyMinute()->withoutOverlapping()->name('worker-default');
 
 Schedule::command(
-    'queue:work --queue='.config('queue.worker_queues.generation').' --stop-when-empty --max-time=300'
+    'queue:work --queue='.config('queue.worker_queues.generation')
+        .' --stop-when-empty --max-time=300 --memory=256'
+        .' --timeout='.((int) config('llm.timeout') + 120)
 )->everyMinute()->withoutOverlapping()->name('worker-generation');
 
 // Generation scheduler tick (§16.2): one daily run evaluates Daily/Weekly/

@@ -24,6 +24,16 @@ return [
 
     'fake' => env('LLM_FAKE', env('APP_ENV') !== 'production'),
 
+    /*
+    | The per-request HTTP timeout every driver below defaults to, kept at the
+    | top level as well so the queue jobs can give themselves a longer leash
+    | than the call they are waiting on. A worker whose timeout is shorter than
+    | the HTTP call SIGKILLs itself mid-generation — exit 137, credit spent,
+    | nothing written.
+    */
+
+    'timeout' => (int) env('LLM_TIMEOUT', 600),
+
     'drivers' => [
         'anthropic' => [
             'client' => 'anthropic',

@@ -1,6 +1,10 @@
 <?php
 
+use App\Jobs\GenerateProductJob;
+use App\Jobs\GenerateTopicJob;
+use App\Jobs\RunQaPromptJob;
 use App\Models\Component;
+use App\Models\GenerationTask;
 use Database\Seeders\ComponentSeeder;
 use Database\Seeders\LlmProviderSeeder;
 use Illuminate\Console\Scheduling\Schedule;
@@ -32,4 +36,25 @@ it('schedules a worker for the generation queues and another for everything else
         ->and($default)->toContain('--stop-when-empty')
         ->and($generation)->not->toBeNull()
         ->and($generation)->toContain('--stop-when-empty');
+});
+
+it('gives every LLM job longer than the call it waits on', function (string $job): void {
+    // A worker that outruns its own job SIGKILLs it — exit 137, model credit
+    // spent, nothing written, and three retries to spend it again.
+    $instance = match ($job) {
+        GenerateProductJob::class, RunQaPromptJob::class => new $job(GenerationTask::factory()->create()),
+        default => new $job(Component::factory()->create()),
+    };
+
+    expect($instance->timeout)->toBeGreaterThan((int) config('llm.timeout'));
+})->with([GenerateProductJob::class, RunQaPromptJob::class, GenerateTopicJob::class]);
+
+it('does not let the generation worker outlive its jobs', function (): void {
+    $command = collect(app(Schedule::class)->events())
+        ->map(fn ($event) => (string) $event->command)
+        ->first(fn (string $command) => str_contains($command, config('queue.worker_queues.generation')));
+
+    preg_match('/--timeout=(\d+)/', (string) $command, $matches);
+
+    expect((int) ($matches[1] ?? 0))->toBeGreaterThan((int) config('llm.timeout'));
 });

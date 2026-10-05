@@ -24,6 +24,13 @@ class GenerateTopicJob implements ShouldQueue
 
     public int $tries = 3;
 
+    /**
+     * Longer than the HTTP call it waits on, or the worker kills itself
+     * mid-generation: Laravel SIGKILLs a job that outruns its timeout, which
+     * surfaces as exit 137 and spends the model credit for nothing.
+     */
+    public int $timeout;
+
     /** @var array<int, int> */
     public array $backoff = [30, 120];
 
@@ -31,6 +38,9 @@ class GenerateTopicJob implements ShouldQueue
         public Component $component,
     ) {
         $this->onQueue($component->queue_name);
+
+        // Two minutes beyond the HTTP timeout it is waiting on.
+        $this->timeout = (int) config('llm.timeout') + 120;
     }
 
     /**
