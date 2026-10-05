@@ -516,7 +516,7 @@ Create an account on a chosen tier.
 
 - `checkoutUrl` present (`mpesa` **and** `card`) — send the browser there. It is PGW's hosted payment
   page, which asks for the M-Pesa number and sends the STK push itself, or takes card details.
-  PGW then returns the payer to `{subscriber portal}/payment/return?payment={publicId}`.
+  PGW then returns the payer to `{subscriber portal}/payment/return/{publicId}`.
 - `checkoutUrl` absent (`mpesa` only, when the backend is configured to push server-side with
   `PGW_MPESA_MODE=stk`) — show `message`; the prompt is already on the payer's phone, no redirect.
   Off by default.
@@ -1399,7 +1399,7 @@ page**: the page collects the M-Pesa number and sends the STK push, or takes car
 **Paid subscription:**
 1. `POST /auth/register` with a paid `tier` → `data.payment.publicId` and `data.instructions`.
    - `instructions.checkoutUrl` present (the normal case, both methods): send the browser there.
-     PGW brings the payer back to `/payment/return?payment={publicId}` on the subscriber portal.
+     PGW brings the payer back to `/payment/return/{publicId}` on the subscriber portal.
    - No `checkoutUrl` (server-side M-Pesa push, off by default; and the local fake gateway): show
      `instructions.message` — the prompt is already on their phone.
 2. The account is `pending`; the user **cannot log in yet** (`403 payment_pending`, with `meta.payment`).
@@ -1408,6 +1408,36 @@ page**: the page collects the M-Pesa number and sends the STK push, or takes car
    activated, an invoice is raised, and they can `POST /auth/login`.
 5. If the status turns `failed` (declined, expired unanswered, or the gateway wouldn't start it), offer
    `POST /payments/{publicId}/retry`, optionally switching to card. Poll the new payment it returns.
+
+### Sending the payer to PGW
+
+`checkoutUrl` is **already complete** — the gateway session token is in it. There is no token for you
+to read, store or append; treat the whole string as opaque.
+
+```js
+// Keep the id before leaving: the SPA is about to be unloaded.
+sessionStorage.setItem('pendingPayment', payment.publicId);
+window.location.href = instructions.checkoutUrl;   // full-page navigation
+```
+
+Rules that matter:
+
+- **Navigate, don't fetch.** `checkoutUrl` is a page, not an API call. `fetch`/`axios` against it is
+  blocked by CORS and would achieve nothing — the payer has to *see* it.
+- **Don't put it in an iframe.** The gateway sets framing headers; embedding it will render blank.
+- **One URL, one payment.** Never cache a `checkoutUrl` or reuse one across payments. If the payment
+  ends `failed`, call `POST /payments/{publicId}/retry` — it returns a **new** payment with a fresh
+  `checkoutUrl`. A stale token will be rejected by the gateway.
+- **Never call PGW's API yourself.** Checkout is authenticated with the merchant credential, which
+  lives server-side only. The backend is the only thing that talks to PGW.
+
+What the payer sees on that page: a method list (M-Pesa Express, M-Pesa, card), the amount, and —
+for M-Pesa — a field for their number with a **Send Payment Request** button, which triggers the STK
+push to their handset. They approve with their PIN. The page then returns them to
+`/payment/return/{publicId}`, which is where your polling resumes.
+
+If they abandon the page instead, nothing is reported back: the payment stays `pending` until it
+expires (default 30 minutes), then turns `failed` with `failureReason: "expired"`.
 
 **To simulate the gateway locally**, POST to `/webhooks/payments/fake` with the payment's `gatewayRef`
 (from `GET /admin/transactions`, or the `payments` table):
@@ -1420,8 +1450,12 @@ page**: the page collects the M-Pesa number and sends the STK push, or takes car
 
 **Freemium:** no payment — `POST /auth/register` returns a token and an active account immediately. Skip straight to using it.
 
-### The `/payment/return` page (subscriber portal)
-PGW's hosted page redirects here with `?payment={publicId}` after **either** payment method. The
+### The `/payment/return/{publicId}` page (subscriber portal)
+PGW's hosted page redirects here after **either** payment method, with the payment's `publicId` as
+the **last path segment** — `/payment/return/9f8e7d6c-…`. It is in the path rather than a query
+parameter on purpose: PGW appends its own `checkOut` parameter to the redirect URL, so the page will
+usually be entered as `/payment/return/{publicId}?checkOut=…`. Ignore `checkOut` entirely — it is an
+encrypted blob for merchants who settle on the redirect, which we do not. The
 redirect itself proves nothing:
 only the webhook settles a payment. The page polls the status and shows pending, success (on to
 login or the dashboard) or failure (offer a retry). The path is configurable

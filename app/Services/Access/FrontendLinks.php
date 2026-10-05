@@ -32,15 +32,21 @@ class FrontendLinks
     }
 
     /**
-     * Where PGW's hosted card page sends the payer when they finish. That page
-     * only polls GET /payments/{payment}/status: the gateway's callback, not
-     * this redirect, settles the payment.
+     * Where PGW's hosted page sends the payer when they finish. That page only
+     * polls GET /payments/{payment}/status: the gateway's callback, not this
+     * redirect, settles the payment.
+     *
+     * The payment id goes in the PATH, not a query parameter: PGW appends its
+     * own `checkOut` parameter to whatever URL it was given, and every
+     * redirect URL it is known to have been given carries no query string of
+     * its own. A path segment survives however that append is done.
      */
     public function paymentReturn(Payment $payment): string
     {
-        return $this->to($payment->user, config('frontend.paths.payment_return'), [
-            'payment' => $payment->public_id,
-        ]);
+        return $this->to(
+            $payment->user,
+            rtrim(config('frontend.paths.payment_return'), '/').'/'.$payment->public_id,
+        );
     }
 
     /**

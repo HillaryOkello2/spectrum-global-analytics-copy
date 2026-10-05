@@ -212,7 +212,7 @@ it('sends card payers to the hosted checkout, returning them to the portal', fun
         && $request['currency'] === 'KES'
         && $request['orderAmount'] === 6449
         && $request['orderRef'] === $payment->gateway_ref
-        && $request['redirectUrl'] === config('frontend.subscriber_url').'/payment/return?payment='.$payment->public_id);
+        && $request['redirectUrl'] === config('frontend.subscriber_url').'/payment/return/'.$payment->public_id);
 
     Http::assertNotSent(fn (Request $request) => str_ends_with($request->url(), '/MStk/'));
 });

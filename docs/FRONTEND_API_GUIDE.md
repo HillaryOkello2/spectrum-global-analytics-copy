@@ -53,7 +53,7 @@ changed shape. Full item-by-item reply in `docs/ANALYTICS_PORTAL_BACKEND_RESPONS
 - **`GET /payments/{payment}/status` needs no token** any more (it still works with one), and there
   is a new **`POST /payments/{payment}/retry`**. A paid signup can finally learn its outcome.
 - Card payments return **`instructions.checkoutUrl`**, and PGW sends the payer back to a new
-  subscriber-portal page, **`/payment/return?payment={publicId}`**, which the portal needs to build.
+  subscriber-portal page, **`/payment/return/{publicId}`**, which the portal needs to build.
 - Payments gained **`failureReason`**; the `payment_pending` login error now carries `meta.payment`.
 - M-Pesa (the default) now requires a **Kenyan mobile**, or `422`. See [Payments](#payments-frontend-flow).
 
@@ -249,10 +249,22 @@ the M-Pesa number and sends the STK push, or takes card details. A fake driver s
 1. Register on a paid tier (or renew / upgrade) → `payment` + `instructions`.
    - **Branch on `instructions.checkoutUrl`, not on `type`.** Present (the normal case, either
      method) → send the browser there. PGW returns the payer to
-     **`/payment/return?payment={publicId}`** on the subscriber portal — build that page for both
+     **`/payment/return/{publicId}`** on the subscriber portal — build that page for both
      methods now, not just card. It only polls, since the redirect itself settles nothing.
    - Absent → show `instructions.message`; the prompt is already on the payer's phone. That is the
      local fake gateway, and a backend option for server-side M-Pesa that is off by default.
+   ```js
+   sessionStorage.setItem('pendingPayment', payment.publicId); // the SPA is about to unload
+   window.location.href = instructions.checkoutUrl;            // full navigation, not fetch
+   ```
+   `checkoutUrl` already contains the gateway token — nothing to parse or append. Don't iframe it
+   (framing headers), don't `fetch` it (it's a page, and CORS blocks it), and don't reuse one: a
+   retry returns a fresh `checkoutUrl`, and a stale token is rejected. Your app never calls PGW
+   directly — the merchant credential is server-side only.
+
+   On that page the payer picks M-Pesa or card, types their number, taps **Send Payment Request**,
+   and approves the STK push on their handset. Then PGW returns them to `/payment/return`.
+
 2. Poll **`GET /payments/{publicId}/status`** — **no token needed**, because a paid signup has none yet —
    every 3–5 seconds until `successful` (the signup can now log in) or `failed`.
 3. On `failed`, show `failureReason` (`declined`, `expired`, `gateway_error`, `amount_mismatch`) and offer
