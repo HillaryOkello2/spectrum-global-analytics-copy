@@ -5,6 +5,7 @@ namespace App\Services\Access;
 use App\Enums\UserStatus;
 use App\Models\User;
 use App\Services\Access\DTOs\CreatedStaffAccount;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -39,7 +40,14 @@ class StaffAccountService
                 'status' => UserStatus::Active,
             ]);
 
-            activity()->causedBy($admin)->performedOn($user)->log('admin user created');
+            Audit::of($user)->by($admin)
+                ->change('email', null, $user->email)
+                ->change('name', null, $user->full_name)
+                ->change('status', null, $user->status)
+                // The roles themselves are logged by syncRoles below, with
+                // the same guards applied — this records the request.
+                ->with(['requestedRoles' => $roles])
+                ->log('admin user created');
 
             return $this->access->syncRoles($user, $roles, $admin);
         });

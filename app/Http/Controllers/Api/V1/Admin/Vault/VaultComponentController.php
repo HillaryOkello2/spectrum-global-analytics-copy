@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin\Vault;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ComponentResource;
 use App\Models\Component;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -16,12 +17,13 @@ class VaultComponentController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        // Counts every product, matching what the vault lists — drafts and
-        // hidden included, unlike the public catalogue's visible-only count.
+        // Counts what the vault lists — drafts and hidden included, unlike the
+        // public catalogue's visible-only count, but excluding documents that
+        // failed quality control, so the count matches the drill-down.
         // The rating average follows suit and spans them all.
         return ComponentResource::collection(
             Component::query()
-                ->withCount('products')
+                ->withCount(['products' => fn (Builder $query) => $query->inVault()])
                 ->withCount(['productRatings as ratings_count'])
                 ->withAvg(['productRatings as ratings_avg_stars'], 'stars')
                 ->orderBy('sort_order')

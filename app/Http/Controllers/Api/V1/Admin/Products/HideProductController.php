@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin\Products;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductListResource;
 use App\Models\Product;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 
 /**
@@ -19,7 +20,9 @@ class HideProductController extends Controller
     {
         $product->update(['is_hidden' => true]);
 
-        activity()->causedBy($request->user())->performedOn($product)->log('product hidden from subscribers');
+        Audit::of($product)->by($request->user())
+            ->change('is_hidden', false, true, 'Hidden from subscribers')
+            ->log('product hidden from subscribers');
 
         return new ProductListResource($product);
     }

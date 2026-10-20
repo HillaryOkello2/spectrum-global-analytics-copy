@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\GenerationTaskResource;
 use App\Models\Topic;
 use App\Services\Generation\GenerationPipeline;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -22,7 +23,12 @@ class QueueTopicGenerationController extends Controller
 
         $task = $pipeline->queueTopic($topic);
 
-        activity()->causedBy($request->user())->performedOn($topic)->log('product generation queued');
+        Audit::of($topic)->by($request->user())
+            ->with([
+                'task' => $task->public_id,
+                'llmProvider' => $task->llmProvider?->name,
+            ])
+            ->log('product generation queued');
 
         return new GenerationTaskResource($task->load('topic'));
     }

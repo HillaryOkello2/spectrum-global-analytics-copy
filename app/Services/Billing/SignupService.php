@@ -11,6 +11,7 @@ use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\Billing\DTOs\SignupResult;
 use App\Services\Payments\PaymentInitiator;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 
 class SignupService
@@ -58,7 +59,11 @@ class SignupService
             return [$user, $subscription];
         });
 
-        activity()->causedBy($user)->performedOn($subscription)->log('freemium signup activated');
+        Audit::of($subscription)->by($user)
+            ->change('tier', null, $tier->name)
+            ->change('status', null, $subscription->status)
+            ->change('ends_at', null, $subscription->ends_at)
+            ->log('freemium signup activated');
 
         return new SignupResult(
             user: $user,

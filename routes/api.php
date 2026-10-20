@@ -114,6 +114,9 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                 Route::get('analytics/most-read-products', Admin\Analytics\MostReadProductsController::class)->name('analytics.most-read-products');
                 Route::get('analytics/product-ratings', Admin\Analytics\ProductRatingsController::class)->name('analytics.product-ratings');
                 Route::get('analytics/rejections', Admin\Analytics\RejectionsController::class)->name('analytics.rejections');
+                // Measured LLM health: provider status, 24h traffic and the
+                // recent failures behind it. Cached server-side for 15s.
+                Route::get('analytics/llm-health', Admin\Analytics\LlmHealthController::class)->name('analytics.llm-health');
             });
 
             Route::middleware('permission:manage vault')->group(function (): void {
@@ -137,6 +140,10 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                 Route::post('tasks/{task}/redact', Admin\Tasks\SubmitRedactionController::class)->name('tasks.redact');
                 Route::post('tasks/{task}/approve', Admin\Tasks\ApproveTaskController::class)->name('tasks.approve');
                 Route::post('tasks/{task}/reject', Admin\Tasks\RejectTaskController::class)->name('tasks.reject');
+                // Overrule a failed QA audit and take the document on anyway.
+                // The gate keeps RED LIGHT documents out of the vault; this is
+                // how a proofreader who disagrees with the verdict rescues one.
+                Route::post('tasks/{task}/qa-override', Admin\Tasks\OverrideQaFailureController::class)->name('tasks.qa-override');
                 Route::get('generation-queue', [Admin\GenerationTaskController::class, 'index'])->name('generation-queue');
             });
 

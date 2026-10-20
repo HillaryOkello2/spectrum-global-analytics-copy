@@ -17,7 +17,14 @@ return new class extends Migration
             $table->string('status')->default('queued')->index();
             $table->unsignedTinyInteger('attempts')->default(0);
             $table->text('last_error')->nullable();
+            // The latest QA audit report, verbatim. Every round of it — and
+            // what was wrong with each — is in qa_reviews.
             $table->text('qa_result')->nullable();
+            // Parsed from that report: green | red | unknown. This is what
+            // decides whether the document reaches the vault.
+            $table->string('qa_verdict', 16)->nullable();
+            // 0 while the first draft is being audited, then 1 per rewrite.
+            $table->unsignedTinyInteger('qa_round')->default(0);
             $table->foreignId('proofreader_id')->nullable()->constrained('users');
             $table->timestamp('proofread_at')->nullable();
             // Redaction is a second, separate review pass after proofreading.

@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\DispatchDueTopicsJob;
+use App\Models\LlmCallLog;
 use Illuminate\Support\Facades\Schedule;
 
 // Queue workers. The host runs no Supervisor, so they are scheduled rather
@@ -33,6 +34,16 @@ Schedule::command('subscriptions:remind')->dailyAt('08:00');
 // PGW calls back on success only, so a declined or ignored M-Pesa prompt has to
 // be timed out here before it can be retried.
 Schedule::command('payments:expire-pending')->everyFiveMinutes();
+
+// LLM liveness (§4.2 of the health contract): a one-token probe per active
+// provider, so a revoked key or a dead endpoint shows as `down` within one
+// interval instead of waiting for the next generation run to discover it.
+// No-ops unless LLM_PROBE_ENABLED is on.
+Schedule::command('llm:probe')->everyFiveMinutes()->withoutOverlapping();
+
+// Call history is only needed for the health dashboard's 24-hour window and
+// its 7-day latency baseline; LlmCallLog::prunable() keeps 30 days by default.
+Schedule::command('model:prune', ['--model' => [LlmCallLog::class]])->daily();
 
 // FIFO release (§6): approved products go live oldest-approval-first, a fixed
 // batch per run, rather than the instant a proofreader signs one off.

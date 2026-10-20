@@ -10,6 +10,7 @@ use App\Notifications\PaymentFailed;
 use App\Services\Billing\SubscriptionActivator;
 use App\Services\Payments\Contracts\PaymentGateway;
 use App\Services\Payments\DTOs\CallbackResult;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -103,9 +104,12 @@ class PaymentCallbackHandler
                     'failure_reason' => $payment->failure_reason?->value,
                 ]);
 
-                activity()
-                    ->performedOn($payment)
-                    ->withProperties(['failureReason' => $payment->failure_reason?->value])
+                Audit::of($payment)
+                    ->change('status', $payment->status, PaymentStatus::Successful)
+                    ->with([
+                        'failureReason' => $payment->failure_reason?->value,
+                        'gatewayRef' => $payment->gateway_ref,
+                    ])
                     ->log('late payment success after the payment was marked failed');
             }
 

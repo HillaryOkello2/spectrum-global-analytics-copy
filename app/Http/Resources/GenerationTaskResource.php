@@ -15,6 +15,11 @@ class GenerationTaskResource extends JsonResource
             'attempts' => $this->attempts,
             'lastError' => $this->last_error,
             'qaResult' => $this->qa_result,
+            // The parsed verdict behind the status: a task in `qa_failed` or
+            // `revising` is there because of this.
+            'qaVerdict' => $this->qa_verdict?->value,
+            'qaRound' => $this->qa_round,
+            'revisionsRemaining' => $this->revisionsRemaining(),
             'rejectionNote' => $this->rejection_note,
             'proofreader' => $this->whenLoaded('proofreader', fn () => [
                 'publicId' => $this->proofreader->public_id,

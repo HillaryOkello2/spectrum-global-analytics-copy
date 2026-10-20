@@ -25,6 +25,19 @@ return [
     'fake' => env('LLM_FAKE', env('APP_ENV') !== 'production'),
 
     /*
+    | What verdict the fake driver's QA auditor returns. The verdict is acted
+    | on now (config/qa.php), so the stub has to be able to produce a failing
+    | one or the gate cannot be exercised without spending credit.
+    |
+    |   green     — always passes (default)
+    |   red       — always fails: drives the gate through to `qa_failed`
+    |   first_red — fails the first draft, passes the rewrite: drives the whole
+    |               QA → revision → re-audit loop
+    */
+
+    'fake_qa_verdict' => env('LLM_FAKE_QA_VERDICT', 'green'),
+
+    /*
     | The per-request HTTP timeout every driver below defaults to, kept at the
     | top level as well so the queue jobs can give themselves a longer leash
     | than the call they are waiting on. A worker whose timeout is shorter than
@@ -100,6 +113,67 @@ return [
             'api_key' => env('MINIMAX_API_KEY'),
             'max_tokens' => (int) env('LLM_MAX_TOKENS', 16000),
             'timeout' => (int) env('LLM_TIMEOUT', 600),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Health monitoring
+    |--------------------------------------------------------------------------
+    |
+    | Backs GET /admin/analytics/llm-health. Every number on that dashboard
+    | comes from llm_call_logs, written by LlmCallRecorder around each attempt
+    | — there is no other record that a model was ever called.
+    |
+    | The thresholds below are the documented status rules. They are env-driven
+    | because the right numbers are a matter of what the vendors actually do,
+    | and that is learned in production, not decided here.
+    |
+    */
+
+    'health' => [
+
+        // The dashboard polls every 30s; a short cache keeps a burst of admins
+        // off the aggregate queries without the panel ever looking stale.
+        'cache_seconds' => (int) env('LLM_HEALTH_CACHE_SECONDS', 15),
+
+        // The rolling window every count on the dashboard is taken over.
+        'window_hours' => (int) env('LLM_HEALTH_WINDOW_HOURS', 24),
+
+        // Most recent failures returned per provider.
+        'recent_errors' => (int) env('LLM_HEALTH_RECENT_ERRORS', 20),
+
+        // Floor is 7 days: the degraded-latency rule compares the window
+        // against the provider's own 7-day average.
+        'retention_days' => (int) env('LLM_CALL_LOG_RETENTION_DAYS', 30),
+
+        // `down`: this many consecutive real calls failed, newest first.
+        'down_consecutive_failures' => (int) env('LLM_HEALTH_DOWN_FAILURES', 5),
+
+        // `degraded`: share of failed calls in the window, 0.10 = 10%.
+        'degraded_error_rate' => (float) env('LLM_HEALTH_DEGRADED_ERROR_RATE', 0.10),
+
+        // `degraded`: window latency this many times the 7-day average.
+        'degraded_latency_multiple' => (float) env('LLM_HEALTH_DEGRADED_LATENCY_MULTIPLE', 2.0),
+
+        // Below these sample sizes the latency comparison is noise, not signal:
+        // two slow calls on a quiet provider are not a degradation.
+        'latency_min_window_calls' => (int) env('LLM_HEALTH_LATENCY_MIN_WINDOW', 3),
+        'latency_min_baseline_calls' => (int) env('LLM_HEALTH_LATENCY_MIN_BASELINE', 10),
+
+        'probe' => [
+            // Scheduled llm:probe. Off in local/testing by default — there is
+            // nothing to learn from probing the fake driver on a timer.
+            'enabled' => (bool) env('LLM_PROBE_ENABLED', env('APP_ENV') === 'production'),
+
+            // One token of output, on the shortest prompt that still proves the
+            // credentials and the endpoint are good.
+            'prompt' => env('LLM_PROBE_PROMPT', 'Reply with: OK'),
+            'max_tokens' => (int) env('LLM_PROBE_MAX_TOKENS', 5),
+
+            // Deliberately short. A probe is a liveness check; a provider that
+            // needs 10 minutes to emit one token is not live.
+            'timeout' => (int) env('LLM_PROBE_TIMEOUT', 30),
         ],
     ],
 

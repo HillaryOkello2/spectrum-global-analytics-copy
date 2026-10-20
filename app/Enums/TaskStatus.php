@@ -7,6 +7,13 @@ enum TaskStatus: string
     case Queued = 'queued';
     case Generating = 'generating';
     case QaRunning = 'qa_running';
+    // The document failed its QA audit and is being rewritten by the same
+    // model, with the audit report attached. See ReviseProductJob.
+    case Revising = 'revising';
+    // Out of revision rounds and still failing. A terminal state for the
+    // pipeline: the product never reaches the vault from here, only a human
+    // overriding the verdict can move it on.
+    case QaFailed = 'qa_failed';
     case AwaitingProofreading = 'awaiting_proofreading';
     case InProofreading = 'in_proofreading';
     case AwaitingRedaction = 'awaiting_redaction';
@@ -25,7 +32,13 @@ enum TaskStatus: string
         return match ($this) {
             self::Queued => [self::Generating, self::Failed],
             self::Generating => [self::QaRunning, self::Failed],
-            self::QaRunning => [self::AwaitingProofreading, self::Failed],
+            // A QA pass has four outcomes now: it passed, it failed and there
+            // is a revision round left, it failed and there is not, or the
+            // audit itself could not be run.
+            self::QaRunning => [self::AwaitingProofreading, self::Revising, self::QaFailed, self::Failed],
+            // A revision is re-audited; it is not trusted on its own.
+            self::Revising => [self::QaRunning, self::Failed],
+
             self::AwaitingProofreading => [self::InProofreading],
             // Proofreading hands over to a separate redaction pass, and only
             // then can the task be approved. With publishing.redaction off there
@@ -43,7 +56,13 @@ enum TaskStatus: string
             // Publication is not immediate — products:release takes approved
             // products live oldest-first (§6, FIFO).
             self::Approved => [self::Published],
-            self::Published, self::Failed => [],
+            // Terminal. `qa_failed` is deliberately not routed to
+            // `in_proofreading` here: that would let POST /tasks/{task}/open
+            // pick a rejected document straight off the board and walk it
+            // through as though it had passed. The one way out is
+            // GenerationPipeline::overrideQaFailure(), which demands a named
+            // proofreader and a reason.
+            self::Published, self::Failed, self::QaFailed => [],
         };
     }
 

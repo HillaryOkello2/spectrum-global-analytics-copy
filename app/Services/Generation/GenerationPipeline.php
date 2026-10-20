@@ -3,16 +3,21 @@
 namespace App\Services\Generation;
 
 use App\Enums\ProductStatus;
+use App\Enums\QaOutcome;
+use App\Enums\QaVerdict;
 use App\Enums\TaskStatus;
 use App\Exceptions\Domain\InvalidTaskTransitionException;
 use App\Exceptions\Domain\ProductNotProofreadException;
 use App\Jobs\GenerateProductJob;
 use App\Models\GenerationTask;
 use App\Models\Product;
+use App\Models\QaReview;
 use App\Models\Topic;
 use App\Models\User;
 use App\Services\Catalog\ProductCodeService;
+use App\Services\Generation\DTOs\QaReport;
 use App\Services\Llm\DTOs\LlmResult;
+use App\Support\Audit;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -31,6 +36,7 @@ class GenerationPipeline
         private readonly ProductCodeService $codes,
         private readonly PromptRenderer $renderer,
         private readonly AbstractExtractor $abstracts,
+        private readonly QaReportParser $qaReports,
     ) {}
 
     /**
@@ -145,14 +151,177 @@ class GenerationPipeline
     }
 
     /**
-     * Record the QA prompt output and surface the task on the Task Board (FR-26/27).
+     * Record the QA audit and act on its verdict (FR-26/27).
+     *
+     * The verdict used to be advisory: whatever the audit said, the document
+     * went to the Task Board and a proofreader read the report. It is now a
+     * gate. A RED LIGHT document is sent back to the same model with the audit
+     * attached (ReviseProductJob), and if it is still failing when the
+     * revision rounds run out it is parked in `qa_failed` — it never reaches
+     * the vault, which is the point.
+     *
+     * Two things are worth knowing about this gate. LLM auditors are not
+     * deterministic: the same document has come back GREEN on one run and RED
+     * on the next with nothing about it changed, which is why there are
+     * revision rounds rather than a single pass, and why
+     * `tasks/{task}/qa-override` lets a human overrule a verdict instead of
+     * losing the document. And `qa.enforce` turns the gate off entirely while
+     * still parsing and storing every report.
      */
-    public function storeQaResult(GenerationTask $task, LlmResult $result): void
+    public function storeQaResult(GenerationTask $task, LlmResult $result): QaOutcome
     {
-        DB::transaction(function () use ($task, $result): void {
-            $this->transition($task, TaskStatus::AwaitingProofreading, ['qa_result' => $result->text]);
+        $report = $this->qaReports->parse($result->text);
+        $previousVerdict = $task->qa_verdict;
 
-            $task->product->update(['status' => ProductStatus::AwaitingProofreading]);
+        return DB::transaction(function () use ($task, $report, $previousVerdict): QaOutcome {
+            $review = QaReview::create([
+                'generation_task_id' => $task->id,
+                'product_id' => $task->product_id,
+                'llm_provider_id' => $task->llm_provider_id,
+                'round' => $task->qa_round,
+                'verdict' => $report->verdict,
+                'report' => $report->raw,
+                'failed_sections' => $report->failedSections,
+                'rerun_instructions' => $report->rerunInstructions,
+            ]);
+
+            $outcome = $this->decide($task, $report);
+
+            match ($outcome) {
+                QaOutcome::Accepted => $this->acceptQa($task, $report),
+                QaOutcome::Revising => $this->queueRevision($task, $report),
+                QaOutcome::Failed => $this->failQa($task, $report),
+            };
+
+            // Surfaces on the task board and in the audit log as the verdict
+            // plus the sections that failed, not as "QA ran".
+            Audit::of($task)
+                ->change('qa_verdict', $previousVerdict, $report->verdict, 'QA verdict')
+                ->with([
+                    'round' => $review->round,
+                    'failedSections' => $report->failedSections,
+                    'outcome' => $outcome->value,
+                ])
+                ->log('QA audit '.$report->verdict->label().' (round '.$review->round.')');
+
+            return $outcome;
+        });
+    }
+
+    /**
+     * The verdict, the gate switch and the remaining rounds, in one place.
+     */
+    private function decide(GenerationTask $task, QaReport $report): QaOutcome
+    {
+        if (! config('qa.enforce')) {
+            return QaOutcome::Accepted;
+        }
+
+        $failing = match ($report->verdict) {
+            QaVerdict::Green => false,
+            QaVerdict::Red => true,
+            // An audit nobody can read is a fault in the audit, not evidence
+            // about the document; what to do with it is a config decision.
+            QaVerdict::Unknown => config('qa.unknown_verdict') !== 'pass',
+        };
+
+        if (! $failing) {
+            return QaOutcome::Accepted;
+        }
+
+        if ($report->verdict === QaVerdict::Unknown && config('qa.unknown_verdict') === 'fail') {
+            return QaOutcome::Failed;
+        }
+
+        return $task->revisionsRemaining() > 0 ? QaOutcome::Revising : QaOutcome::Failed;
+    }
+
+    private function acceptQa(GenerationTask $task, QaReport $report): void
+    {
+        $this->transition($task, TaskStatus::AwaitingProofreading, [
+            'qa_result' => $report->raw,
+            'qa_verdict' => $report->verdict,
+        ]);
+
+        $task->product->update(['status' => ProductStatus::AwaitingProofreading]);
+    }
+
+    private function queueRevision(GenerationTask $task, QaReport $report): void
+    {
+        $this->transition($task, TaskStatus::Revising, [
+            'qa_result' => $report->raw,
+            'qa_verdict' => $report->verdict,
+        ]);
+
+        // The product stays a draft through the rewrite. It has no business
+        // being anywhere a human picks work up from until it passes.
+        $task->product->update(['status' => ProductStatus::Draft]);
+    }
+
+    private function failQa(GenerationTask $task, QaReport $report): void
+    {
+        $this->transition($task, TaskStatus::QaFailed, [
+            'qa_result' => $report->raw,
+            'qa_verdict' => $report->verdict,
+            'last_error' => 'Failed quality control after '.$task->qa_round.' revision(s): '.$report->summary(),
+            'completed_at' => now(),
+        ]);
+
+        $task->product->update(['status' => ProductStatus::QaFailed]);
+    }
+
+    /**
+     * Store a rewritten document and send it back for re-audit. The round
+     * counter goes up here, which is what eventually ends the loop.
+     */
+    public function storeRevision(GenerationTask $task, LlmResult $result): Product
+    {
+        return DB::transaction(function () use ($task, $result) {
+            $product = $task->product;
+
+            $product->update(['body' => $result->text]);
+
+            $this->transition($task, TaskStatus::QaRunning, ['qa_round' => $task->qa_round + 1]);
+
+            Audit::of($task)
+                ->change('qa_round', $task->qa_round - 1, $task->qa_round, 'Revision round')
+                ->with(['product' => $product->code])
+                ->log('document rewritten after a failed QA audit (round '.$task->qa_round.')');
+
+            return $product;
+        });
+    }
+
+    /**
+     * A human overrules an exhausted QA failure and takes the document on
+     * themselves. It goes straight into their hands — `in_proofreading`, with
+     * them named as the proofreader — rather than back onto the board, so it
+     * is never unclear who decided to keep it.
+     */
+    public function overrideQaFailure(GenerationTask $task, User $proofreader, string $reason): void
+    {
+        if ($task->status !== TaskStatus::QaFailed) {
+            throw new InvalidTaskTransitionException($task->status, TaskStatus::InProofreading);
+        }
+
+        DB::transaction(function () use ($task, $proofreader, $reason): void {
+            // Written directly rather than through transition(): `qa_failed`
+            // has no legal transition, by design — see TaskStatus. This is the
+            // single sanctioned way out of it, and the guard above is the one
+            // that matters.
+            $task->update([
+                'status' => TaskStatus::InProofreading,
+                'proofreader_id' => $proofreader->id,
+                'proofread_at' => now(),
+                'completed_at' => null,
+            ]);
+
+            $task->product->update(['status' => ProductStatus::InProofreading]);
+
+            Audit::of($task)->by($proofreader)
+                ->change('status', TaskStatus::QaFailed, TaskStatus::InProofreading)
+                ->with(['reason' => $reason, 'qaVerdict' => $task->qa_verdict?->value])
+                ->log('QA failure overridden; document taken into proofreading');
         });
     }
 
@@ -168,7 +337,10 @@ class GenerationPipeline
 
         $task->product->update(['status' => ProductStatus::InProofreading]);
 
-        activity()->causedBy($proofreader)->performedOn($task)->log('proofreading opened');
+        Audit::of($task)->by($proofreader)
+            ->change('status', TaskStatus::AwaitingProofreading, TaskStatus::InProofreading)
+            ->with(['product' => $task->product?->code])
+            ->log('proofreading opened');
     }
 
     /**
@@ -189,6 +361,7 @@ class GenerationPipeline
         // With the redaction pass off, proofreading is the whole editorial
         // review and approves the product outright.
         $redacting = (bool) config('publishing.redaction');
+        $previousBody = (string) $task->product?->body;
 
         DB::transaction(function () use ($task, $proofreader, $attributes, $redacting): void {
             $this->transition(
@@ -212,7 +385,17 @@ class GenerationPipeline
             ]);
         });
 
-        activity()->causedBy($proofreader)->performedOn($task)
+        Audit::of($task)->by($proofreader)
+            ->change('status', TaskStatus::InProofreading, $redacting ? TaskStatus::AwaitingRedaction : TaskStatus::Approved)
+            // The bodies themselves are the product, not an audit-log entry —
+            // the log records that the document was edited and by how much.
+            ->change(
+                'body_length',
+                strlen($previousBody),
+                strlen((string) $task->product->body),
+                'Document length (characters)',
+            )
+            ->with(['product' => $task->product?->code])
             ->log($redacting ? 'document proofread' : 'document proofread and approved');
     }
 
@@ -247,7 +430,11 @@ class GenerationPipeline
             ]);
         });
 
-        activity()->causedBy($redactor)->performedOn($task)->log('redaction approved');
+        Audit::of($task)->by($redactor)
+            ->change('status', TaskStatus::AwaitingRedaction, TaskStatus::Approved)
+            ->change('redaction_approved', false, true)
+            ->with(['product' => $task->product?->code])
+            ->log('redaction approved');
     }
 
     /**
@@ -256,6 +443,8 @@ class GenerationPipeline
      */
     public function approve(GenerationTask $task, User $approver): void
     {
+        $previousStatus = $task->status;
+
         DB::transaction(function () use ($task): void {
             // State first, so a task approved from the wrong place still says
             // so; then the editorial gate.
@@ -282,18 +471,26 @@ class GenerationPipeline
             ]);
         });
 
-        activity()->causedBy($approver)->performedOn($task)->log('product approved');
+        Audit::of($task)->by($approver)
+            ->change('status', $previousStatus, TaskStatus::Approved)
+            ->with(['product' => $task->product?->code])
+            ->log('product approved');
     }
 
     public function reject(GenerationTask $task, User $reviewer, string $note): void
     {
+        $previousStatus = $task->status;
+
         DB::transaction(function () use ($task, $note): void {
             $this->transition($task, TaskStatus::Rejected, ['rejection_note' => $note]);
 
             $task->product?->update(['status' => ProductStatus::Rejected]);
         });
 
-        activity()->causedBy($reviewer)->performedOn($task)->log('product rejected');
+        Audit::of($task)->by($reviewer)
+            ->change('status', $previousStatus, TaskStatus::Rejected)
+            ->with(['note' => $note, 'product' => $task->product?->code])
+            ->log('product rejected');
     }
 
     public function fail(GenerationTask $task, string $error): void

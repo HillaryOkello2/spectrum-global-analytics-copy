@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateSubscriberRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -37,9 +38,15 @@ class SubscriberController extends Controller
 
     public function update(UpdateSubscriberRequest $request, User $subscriber): UserResource
     {
+        // Snapshot limited to the submitted fields, so the log says which of
+        // them an admin actually changed rather than listing the whole row.
+        $before = $subscriber->only(array_keys($request->validated()));
+
         $subscriber->update($request->validated());
 
-        activity()->causedBy($request->user())->performedOn($subscriber)->log('subscriber updated');
+        Audit::of($subscriber)->by($request->user())
+            ->changes($before, $subscriber->only(array_keys($request->validated())))
+            ->log('subscriber updated');
 
         return new UserResource($subscriber->fresh()->load('activeSubscription.tier'));
     }

@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\StoreTopicRequest;
 use App\Http\Resources\TopicResource;
 use App\Models\Component;
 use App\Models\Topic;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -46,7 +47,11 @@ class TopicController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
-        activity()->causedBy($request->user())->performedOn($topic)->log('topic created');
+        Audit::of($topic)->by($request->user())
+            ->change('title', null, $topic->title)
+            ->change('component', null, $component->code)
+            ->change('frequency', null, $topic->frequency)
+            ->log('topic created');
 
         return new TopicResource($topic->load('component', 'creator'));
     }

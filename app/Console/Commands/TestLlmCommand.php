@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Component;
 use App\Models\GenerationTask;
+use App\Models\LlmCallLog;
 use App\Models\LlmProvider;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
@@ -101,7 +102,7 @@ class TestLlmCommand extends Command
         $started = microtime(true);
 
         try {
-            $reply = $llm->for($provider)->generate('Reply with exactly: OK');
+            $reply = $llm->for($provider, LlmCallLog::CONTEXT_MANUAL)->generate('Reply with exactly: OK');
         } catch (Throwable $e) {
             $this->line("{$label} <fg=red>FAILED</> ".$this->oneLine($e->getMessage()));
 
@@ -264,7 +265,7 @@ class TestLlmCommand extends Command
             return;
         }
 
-        $client = $llm->for($component->assignedLlmProvider);
+        $client = $llm->for($component->assignedLlmProvider, LlmCallLog::CONTEXT_MANUAL);
 
         // A throwaway document ref: nothing is persisted, this only proves the
         // prompt renders and the model returns a usable body.

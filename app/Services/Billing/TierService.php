@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Models\Component;
 use App\Models\SubscriptionTier;
 use App\Models\User;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -62,10 +63,8 @@ class TierService
 
             $tier->load('allocations.component');
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($tier)
-                ->withProperties(['from' => $before, 'to' => $this->matrixOf($tier)])
+            Audit::of($tier)->by($actor)
+                ->change('allocations', $before, $this->matrixOf($tier), 'Component access')
                 ->log('tier allocations updated');
 
             return $tier;
@@ -99,10 +98,8 @@ class TierService
 
             $tier->update($attributes);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($tier)
-                ->withProperties(['from' => $before, 'to' => $attributes])
+            Audit::of($tier)->by($actor)
+                ->changes($before, $attributes)
                 ->log('subscription tier updated');
 
             return $tier->refresh()->load('allocations.component');

@@ -6,6 +6,7 @@ use App\Exceptions\Domain\LastSystemAdminException;
 use App\Exceptions\Domain\RoleEscalationException;
 use App\Exceptions\Domain\SelfAccessChangeException;
 use App\Models\User;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,10 +34,8 @@ class UserAccessService
 
             $user->syncRoles($roles);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($user)
-                ->withProperties(['from' => $previous, 'to' => $roles])
+            Audit::of($user)->by($actor)
+                ->change('roles', $previous, $roles)
                 ->log('roles updated');
 
             return $user->refresh();
@@ -58,10 +57,8 @@ class UserAccessService
 
             $user->syncPermissions($permissions);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($user)
-                ->withProperties(['from' => $previous, 'to' => $permissions])
+            Audit::of($user)->by($actor)
+                ->change('permissions', $previous, $permissions)
                 ->log('permissions updated');
 
             return $user->refresh();

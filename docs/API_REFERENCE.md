@@ -30,6 +30,31 @@ example success and error responses.
 
 ---
 
+## Added — 2026-10-20 (LLM health, QA gate, audit detail)
+
+Three changes. The first two are additive; the third changes the shape of one endpoint's rows
+while keeping every key it used to return.
+
+| What | Where |
+|---|---|
+| **New:** measured LLM health — status, 24h traffic, latency and the recent failures per provider | `GET /admin/analytics/llm-health` — see [LLM health](#llm-health-131) |
+| **New:** a QA verdict gate. A failed audit is sent back to the model to be rewritten, and a document that cannot pass never reaches the vault | task statuses `revising` / `qa_failed`, `qaVerdict`, `qaRound`, `qaReviews[]` — see [Quality control gate](#quality-control-gate--failed-audits-never-reach-the-vault) |
+| **New:** override a QA verdict a proofreader disagrees with | `POST /admin/tasks/{task}/qa-override` |
+| Audit log entries now carry a field-level diff, the actor, the subject's label and where the change came from | `GET /admin/audit-logs` — see [Audit log](#audit-log-fr-40) |
+
+**What a frontend has to do about it:**
+
+1. **LLM health panel** — the endpoint exists; drop `NEXT_PUBLIC_LLM_HEALTH_DEMO`.
+2. **Task board** — handle two new statuses. `revising` needs no action from anyone (the document
+   is being rewritten and will move on by itself); `qa_failed` needs the override action or
+   nothing. Both appear in the `status` filter.
+3. **Vault** — `qa_failed` products are not listed any more, and the component `productsCount`
+   excludes them. Nothing to change unless you want a "rejected by QA" view, which is
+   `?status=qa_failed`.
+4. **Audit log** — `description` is now `event`, and the rows carry `summary`, `changes[]`,
+   `subject` and `causer` as an object. `properties` and the `meta.currentPage` keys are unchanged,
+   so an existing screen keeps working until you upgrade it.
+
 ## Added — 2026-10-01 (analytics-portal pass)
 
 Additive only — nothing here changes or removes an existing field.
@@ -449,8 +474,10 @@ All errors are JSON. Check the HTTP status first, then `code` for domain errors.
 | **PaymentStatus** | `pending`, `successful`, `failed` | payment `status` |
 | **PaymentFailureReason** | `gateway_error`, `expired`, `declined`, `amount_mismatch` | payment `failureReason` (null unless `failed`) |
 | **AccessType** | `unlimited`, `metered`, `denied` | tier allocation `accessType` |
-| **ProductStatus** | `draft`, `awaiting_proofreading`, `in_proofreading`, `rejected`, `approved`, `published` | product `status` (admin/vault) |
-| **TaskStatus** | `queued`, `generating`, `qa_running`, `awaiting_proofreading`, `in_proofreading`, `approved`, `rejected`, `published`, `failed` | generation task `status` |
+| **ProductStatus** | `draft`, `qa_failed`, `awaiting_proofreading`, `in_proofreading`, `awaiting_redaction`, `rejected`, `approved`, `published` | product `status` (admin/vault) |
+| **TaskStatus** | `queued`, `generating`, `qa_running`, `revising`, `qa_failed`, `awaiting_proofreading`, `in_proofreading`, `awaiting_redaction`, `approved`, `rejected`, `published`, `failed` | generation task `status` |
+| **QaVerdict** | `green`, `red`, `unknown` | task `qaVerdict`, `qaReviews[].verdict` |
+| **LlmHealthStatus** | `healthy`, `degraded`, `down`, `idle` | `GET /admin/analytics/llm-health` → `providers[].status` |
 | **Frequency** | `daily`, `weekly`, `monthly`, `quarterly` | topic `frequency` |
 | **TransactionTier** | `premium`, `mid_range`, `standard` | Pay-to-own purchases (dormant — no transactional component is seeded) |
 
@@ -1173,13 +1200,79 @@ Both endpoints return the full `TierResource`, so the screen can re-render from 
 | PATCH | `/admin/subscribers/{subscriber}` | Edit / suspend. Body: `first_name`, `last_name`, `phone`, `country`, `status` — all optional. Set `status: "suspended"` to block login. |
 
 ### Audit log (FR-40)
-`GET /admin/audit-logs` — paginated. Query: `description` (substring), `from`, `to` (dates).
+
+`GET /admin/audit-logs` — paginated, newest first.
+
+Every entry says **what changed, from what, to what, and who changed it**. Entries used to carry
+only a description (`subscriber updated`) and an empty `properties`; they now carry a field-level
+diff, the subject in a form that outlives the record itself, and where the change came from.
+
+| Query | Rules |
+|---|---|
+| `description` | substring of the event, e.g. `tier` |
+| `causer` | the actor's `publicId` — everything one person did |
+| `subject` | a record's `publicId` — everything done to it, including after it is deleted |
+| `subjectType` | class name: `User`, `Product`, `SubscriptionTier`, `GenerationTask`, `Role`, `Payment` |
+| `search` | free text over the event and the subject's label |
+| `from`, `to` | dates (inclusive) |
+| `perPage` | default 50 |
+
+**Response (`200`):**
 ```json
 {
-  "data": [ { "id": 12, "description": "product approved and published", "subjectType": "GenerationTask", "causer": "System Admin", "properties": {}, "createdAt": "2026-07-15 12:11:57" } ],
-  "meta": { "currentPage": 1, "lastPage": 1, "total": 12 }
+  "data": [
+    {
+      "id": 412,
+      "event": "subscriber updated",
+      "summary": "Grace Mwangi: subscriber updated on John Smith — Status pending → active, Country KE → UG",
+      "subject": { "type": "User", "id": 88, "publicId": "…", "label": "John Smith" },
+      "causer": { "name": "Grace Mwangi", "publicId": "…", "email": "grace@…" },
+      "changes": [
+        { "field": "status",  "label": "Status",  "from": "pending", "to": "active" },
+        { "field": "country", "label": "Country", "from": "KE",      "to": "UG" }
+      ],
+      "context": { "via": "api", "ip": "41.90.…" },
+      "properties": { "…": "everything the call site attached, diff included" },
+      "createdAt": "2026-10-20 12:11:57"
+    }
+  ],
+  "meta": { "currentPage": 1, "lastPage": 1, "total": 412, "current_page": 1, "last_page": 1, "per_page": 50 }
 }
 ```
+
+| Field | Notes |
+|---|---|
+| `event` | the old `description`, unchanged — existing filters still work |
+| `summary` | one rendered line. Use it for a log table; use `changes` for a detail panel |
+| `subject.label` | captured **when the entry was written**, so a deleted role or user is still named |
+| `causer` | `{"name": "System", "publicId": null}` for an unattended change — a scheduled release, a gateway callback. Never blank |
+| `changes[]` | only the fields that actually changed. A value sent unchanged is not listed |
+| `changes[].from/to` | scalars, dates as `Y-m-d H:i:s`, enums as their wire value, lists as arrays |
+| `context.via` | `api` (someone in the portal, with their `ip`) or `system` (scheduler, queue worker, artisan) |
+
+**Credentials are never written.** `password`, tokens, API keys and raw gateway payloads are
+replaced with `[redacted]` before the entry is stored — not when it is read.
+
+**What is logged, and with what diff:**
+
+| Event | Changes recorded |
+|---|---|
+| `subscriber updated`, `admin user updated` | each submitted field that differed |
+| `roles updated`, `permissions updated`, `role permissions updated` | the whole list, before and after |
+| `role created` / `role updated` / `role deleted` | name, description, permissions |
+| `subscription tier updated` | each changed field (price, purchasable…) |
+| `tier allocations updated` | the access matrix as `{"DB": "metered(10)", "WH": "unlimited"}`, before and after |
+| `product hidden from subscribers` / `product unhidden` | the hidden flag |
+| `product released` | `approved → published`, with the product `code` |
+| `topic created`, `product generation queued` | what was created / which model it went to |
+| `QA audit RED LIGHT (round 0)` | the verdict, the failed sections and what the gate did |
+| `proofreading opened`, `document proofread…`, `product approved`, `product rejected` | the status transition, the document's length change, and the rejection note |
+| `QA failure overridden…` | the transition and the reason the proofreader gave |
+| `payment confirmed; subscription activated` | status, amount, transaction code, gateway reference |
+
+> `meta` carries both key styles: `currentPage`/`lastPage`/`total` as this endpoint has always
+> returned them, and the paginator's own `current_page`/`per_page`/… as every other paginated
+> endpoint returns. Nothing that was reading the old keys needs to change.
 
 ### Transaction history (FR-42)
 
@@ -1258,6 +1351,79 @@ the Product Generation Master, where the LLM is derived from the chosen componen
 The binding is one component → exactly one LLM (a component appears under a single provider). The
 reverse — which LLM a component uses — is read by finding the provider whose `components` contains it.
 
+### LLM health (§13.1)
+
+`GET /admin/analytics/llm-health` — one node per provider, its 24-hour traffic, and the failures
+behind it. Permission: `view analytics`. No parameters. Cached server-side for 15 seconds; the
+dashboard is expected to poll every 30.
+
+Every number here is **measured**. `LlmCallRecorder` writes one row per request attempt wherever
+the system calls a model — product generation, the QA audit, a rewrite, topic commissioning — and
+a scheduled probe (`llm:probe`, every 5 minutes) keeps providers nobody is calling honest.
+
+**Response (`200`):**
+```json
+{
+  "data": {
+    "generatedAt": "2026-10-20T10:55:12Z",
+    "providers": [
+      {
+        "publicId": "01JABCD…",
+        "name": "Gemini 3.6 Flash",
+        "vendor": "Google",
+        "status": "degraded",
+        "requests24h": 268,
+        "errors24h": 31,
+        "avgLatencyMs": 4870,
+        "lastCheckedAt": "2026-10-20T10:54:40Z",
+        "recentErrors": [
+          { "occurredAt": "2026-10-20T10:43:05Z", "code": "429", "message": "Quota exceeded for requests per minute", "context": "Product generation" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `publicId` | the same id `GET /admin/llm-providers` returns, so the two join |
+| `status` | `healthy` \| `degraded` \| `down` \| `idle` — decided here, see below |
+| `requests24h` | real attempts in a rolling 24 hours. **Retries count**: one call that failed and succeeded on its retry is 2 requests and 1 error. Probes are excluded |
+| `errors24h` | failures among those. Always ≤ `requests24h` |
+| `avgLatencyMs` | mean of **successful** calls only; `null` if there were none |
+| `lastCheckedAt` | newest real call *or* probe; `null` if the provider has never been called |
+| `recentErrors` | up to 20, newest first, real calls and probes alike. `[]` if none |
+| `recentErrors[].code` | HTTP status as a string (`"429"`), or `timeout`, `network`, `invalid_response`, `unknown` |
+| `recentErrors[].context` | `Product generation`, `QA`, `Revision`, `Topic commissioning`, `Health probe`, `Manual check` |
+
+**Status rules, in priority order.** These are the final thresholds; all of them are env-tunable
+(`config/llm.php` → `health`).
+
+| Status | Rule |
+|---|---|
+| `down` | the last **5** real calls all failed (and there were at least 5), **or** the newest probe in the window failed with `401`, `402`, `403`, any `5xx`, `timeout` or `network`, and nothing has succeeded since |
+| `degraded` | not `down`, and the error rate over the window is **≥ 10 %**, **or** mean latency is more than **2×** the provider's own 7-day mean (needs ≥ 3 successes in the window and ≥ 10 over 7 days, or the comparison is noise), **or** the newest probe failed for any other reason and nothing has succeeded since |
+| `idle` | no real calls in the window and no failing probe. A provider switched off with `isActive: false` lands here: it is not probed, so it has no failing probe to be `down` for |
+| `healthy` | everything else |
+
+> A provider with fewer than 5 real calls, all of which failed, is `degraded`, not `down` — one
+> bad call on a quiet provider is not an outage. The probe is what catches a genuine one, within
+> one 5-minute interval of a key being revoked.
+
+**Errors:** `401` without a token, `403` without `view analytics`, `500` with the usual body.
+
+**Operationally:**
+
+- `php artisan llm:probe` — probe every active provider now (`--provider=` for one, `--force` to
+  ignore `LLM_PROBE_ENABLED`). Each probe is one prompt line and a 5-token ceiling.
+- Probing is **off outside production** by default (`LLM_PROBE_ENABLED`); there is nothing to learn
+  from probing the local stub on a timer.
+- Call history is pruned daily, keeping 30 days (`LLM_CALL_LOG_RETENTION_DAYS`). The floor is 7 —
+  the latency rule compares against a 7-day baseline.
+- **No secrets reach this endpoint.** Vendor messages are masked and truncated to 300 characters
+  before they are stored, so a key a vendor echoed back is not in the database either.
+
 ### Analytics (FR-42, §14.8)
 
 - `GET /admin/analytics/summary`
@@ -1332,7 +1498,79 @@ Drill-down that includes hidden and unpublished products (admins see everything)
 
 Hide/unhide return the product's `ProductListResource`. Hiding removes it from every subscriber and public endpoint at the data layer.
 
-> **Three different product counts, deliberately.** Vault `productsCount` counts *every* product — drafts, awaiting-proofreading, awaiting-redaction, approved-but-unreleased, rejected and hidden included — matching the rows the vault itself lists. The public catalogue's `productsCount` counts only published, non-hidden ones, so **the two legitimately differ for the same component**. A third, `analytics/products-by-component` → `productsPublished`, counts published products *including* hidden ones (hiding is a subscriber-facing control, not a measure of editorial output). If you display more than one, label them.
+> **Three different product counts, deliberately.** Vault `productsCount` counts *every* product — drafts, awaiting-proofreading, awaiting-redaction, approved-but-unreleased, rejected and hidden included — matching the rows the vault itself lists. The one exception is `qa_failed`: a document the QA gate rejected is not listed in the vault and is not counted, because the vault is the record of what the system stands behind. Pass `?status=qa_failed` on `GET /admin/vault/components/{component}/products` to see them; the task board shows every one with its audit report. The public catalogue's `productsCount` counts only published, non-hidden ones, so **the two legitimately differ for the same component**. A third, `analytics/products-by-component` → `productsPublished`, counts published products *including* hidden ones (hiding is a subscriber-facing control, not a measure of editorial output). If you display more than one, label them.
+
+### Quality control gate — failed audits never reach the vault
+
+The QA pass (FR-26) audits each generated document against the client's SGA-QCP protocol and ends
+with a `GREEN LIGHT` / `RED LIGHT` verdict. **That verdict is now acted on.** It used to be
+advisory: the report was stored and the document went to a proofreader whatever it said.
+
+```
+generating → qa_running ─┬─ GREEN ──────────────→ awaiting_proofreading → …
+                         │
+                         ├─ RED, rounds left ───→ revising → qa_running   (back to the model
+                         │                                                 with the audit attached)
+                         └─ RED, out of rounds ─→ qa_failed
+                                                      │
+                                                      └── POST /tasks/{task}/qa-override
+                                                          → in_proofreading
+```
+
+**What a RED LIGHT does.** The document goes back to the **same** model with the original
+specification, the rejected draft and the full audit report, and the rewrite is audited again. By
+default it gets **2** rewrites (`QA_MAX_REVISIONS`); if it is still failing it lands in `qa_failed`
+and stops. A `qa_failed` product does **not** appear in the vault listing and no proofreader can
+pick it off the board — `qa_failed` is a terminal status with no transitions.
+
+**Two new statuses** appear in `TaskStatus` and one in `ProductStatus`:
+
+| Status | Meaning |
+|---|---|
+| `revising` (task) | failed its audit and is being rewritten. Nothing to do; it moves on by itself |
+| `qa_failed` (task, product) | out of rewrites and still failing. Needs a human decision or nothing |
+
+**New task fields:**
+
+```json
+{ "qaVerdict": "red", "qaRound": 2, "revisionsRemaining": 0,
+  "qaReviews": [
+    { "round": 0, "verdict": "red", "failedSections": ["1. STRATEGIC-ONLY MANDATE VERIFICATION", "4. FACTUAL RIGOR & ANTI-HALLUCINATION AUDIT"],
+      "rerunInstructions": "Cut the tactical inventory in paragraph 3…", "report": "…the full audit…", "auditedAt": "…" },
+    { "round": 1, "verdict": "red", "…": "…" }
+  ] }
+```
+
+`qaReviews` is on the **full task detail** only (`GET /admin/tasks/{task}`), oldest first — the
+rewrite history is only legible as a series. `qaResult` still carries the latest report verbatim.
+
+**Overriding a verdict.** `POST /admin/tasks/{task}/qa-override`, body `reason` (required, 10–2000
+chars). Takes the document straight into `in_proofreading` with the caller named as proofreader,
+and logs the reason. `409 invalid_task_transition` on any task that is not `qa_failed`.
+
+> Why the override exists. The auditors are models too, and they are not deterministic — the same
+> document has come back GREEN on one run and RED on the next with nothing about it changed. The
+> gate is right to stop a failing document, but a verdict a proofreader has read and disagrees with
+> must not be the end of the document. Every override is attributable and carries its reason.
+
+**Switching the gate off.** `QA_ENFORCE_VERDICT=false` restores the old behaviour: the report is
+still parsed, stored and shown, but the document goes to the proofreader whatever it says.
+`QA_UNKNOWN_VERDICT` (`pass` by default) decides what happens when the auditor answered
+off-template and no verdict could be read — an unreadable audit is a fault in the audit, and a
+proofreader reads the document anyway.
+
+**Cost.** Each rewrite is two more model calls on an already long document (a full rewrite and a
+full re-audit), which is why the default is 2 and not 5.
+
+> **Before enforcing this in production, run the loop live on each component.** Verified on
+> 2026-10-20 against a real rejected Daily Brief and its real RED audit: Gemini returned a
+> complete 34k-character corrected document — cover, Table of Contents, same reference code, no
+> preamble — and the same auditor that rejected the original passed it with zero failed sections.
+> But the first attempt came back RED, because the revision prompt told the model not to invent
+> figures without also telling it to keep naming real actors, and it answered the audit by
+> retreating into abstraction. That is one run each, and these auditors are not deterministic.
+> A component whose protocol and prompt genuinely contradict each other would now park **every**
+> edition in `qa_failed` rather than merely annoying a proofreader. The rollback is one env var.
 
 ### Task Board — proofreading workflow (FR-44/45, §18.4)
 
@@ -1353,6 +1591,7 @@ awaiting_proofreading → in_proofreading → awaiting_redaction → approved �
 | POST | `/admin/tasks/{task}/redact` | **Stage 2.** Submit the redacted document. **Body:** `redacted_body` (required). Approves the product. → `approved` |
 | POST | `/admin/tasks/{task}/approve` | Approve without a redaction pass. → `approved`. **Refused with `409 product_not_proofread` unless `/proofread` was submitted for this task** — it cannot stand in for proofreading |
 | POST | `/admin/tasks/{task}/reject` | Reject. **Body:** `note` (required, ≤2000). Returns the task to the board. |
+| POST | `/admin/tasks/{task}/qa-override` | Overrule a failed QA audit. **Body:** `reason` (required, 10–2000). → `in_proofreading`, caller named as proofreader. Only from `qa_failed`. |
 
 `{task}` = task `publicId`. An out-of-order transition (e.g. `/redact` before `/proofread`) returns
 `409` with `"code": "invalid_task_transition"`.

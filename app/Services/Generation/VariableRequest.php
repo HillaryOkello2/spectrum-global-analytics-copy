@@ -4,6 +4,7 @@ namespace App\Services\Generation;
 
 use App\Exceptions\TopicGenerationFailedException;
 use App\Models\Component;
+use App\Models\LlmCallLog;
 use App\Services\Llm\LlmManager;
 use Illuminate\Support\Facades\Log;
 
@@ -29,7 +30,7 @@ class VariableRequest
      */
     public function request(Component $component, string $prompt, array $expected): array
     {
-        $raw = $this->llm->for($component->assignedLlmProvider)->generate($prompt)->text;
+        $raw = $this->llm->for($component->assignedLlmProvider, LlmCallLog::CONTEXT_TOPIC)->generate($prompt)->text;
 
         $decoded = json_decode($this->stripFences($raw), true);
 

@@ -29,6 +29,7 @@ class GenerationTaskController extends Controller
         'proofreader',
         'redactor',
         'llmProvider',
+        'qaReviews',
     ];
 
     public function index(Request $request): AnonymousResourceCollection

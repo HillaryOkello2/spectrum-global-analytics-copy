@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\Middleware\FailOnTokenCeiling;
 use App\Models\GenerationTask;
+use App\Models\LlmCallLog;
 use App\Services\Generation\GenerationPipeline;
 use App\Services\Generation\PromptRenderer;
 use App\Services\Generation\TopicVariableFiller;
@@ -73,7 +74,7 @@ class GenerateProductJob implements ShouldQueue
 
         $prompt = $renderer->renderProductPrompt($this->task->topic, $product->code);
 
-        $result = $llm->for($this->task->llmProvider)->generate($prompt);
+        $result = $llm->for($this->task->llmProvider, LlmCallLog::CONTEXT_GENERATION)->generate($prompt);
 
         $pipeline->storeGeneratedProduct($this->task, $result);
 

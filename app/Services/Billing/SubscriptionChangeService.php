@@ -12,6 +12,7 @@ use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\Billing\DTOs\SubscriptionChangeResult;
 use App\Services\Payments\PaymentInitiator;
+use App\Support\Audit;
 use Illuminate\Database\Eloquent\Model;
 
 class SubscriptionChangeService
@@ -87,6 +88,7 @@ class SubscriptionChangeService
     private function extendFreeImmediately(Subscription $subscription): SubscriptionChangeResult
     {
         $base = $subscription->ends_at?->isFuture() ? $subscription->ends_at : now();
+        $before = $subscription->only(['status', 'starts_at', 'ends_at']);
 
         $subscription->update([
             'status' => SubscriptionStatus::Active,
@@ -94,7 +96,9 @@ class SubscriptionChangeService
             'ends_at' => $base->copy()->addMonth(),
         ]);
 
-        activity()->causedBy($subscription->user)->performedOn($subscription)->log('freemium subscription renewed');
+        Audit::of($subscription)->by($subscription->user)
+            ->changes($before, $subscription->only(['status', 'starts_at', 'ends_at']))
+            ->log('freemium subscription renewed');
 
         return new SubscriptionChangeResult(subscription: $subscription->refresh());
     }

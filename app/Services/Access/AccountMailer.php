@@ -4,6 +4,7 @@ namespace App\Services\Access;
 
 use App\Models\User;
 use App\Notifications\AccountCreated;
+use App\Support\Audit;
 use Throwable;
 
 /**
@@ -26,7 +27,7 @@ class AccountMailer
             return false;
         }
 
-        activity()->performedOn($user)->log('sign-in details emailed');
+        Audit::of($user)->with(['email' => $user->email])->log('sign-in details emailed');
 
         return true;
     }

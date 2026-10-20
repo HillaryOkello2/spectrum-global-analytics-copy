@@ -5,6 +5,7 @@ namespace App\Services\Publishing;
 use App\Enums\ProductStatus;
 use App\Enums\TaskStatus;
 use App\Models\Product;
+use App\Support\Audit;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -77,6 +78,9 @@ class ReleaseService
             'completed_at' => now(),
         ]);
 
-        activity()->performedOn($product)->log('product released');
+        Audit::of($product)
+            ->change('status', ProductStatus::Approved, ProductStatus::Published)
+            ->with(['code' => $product->code])
+            ->log('product released');
     }
 }

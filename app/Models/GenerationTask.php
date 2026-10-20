@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\QaVerdict;
 use App\Enums\TaskStatus;
 use App\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GenerationTask extends Model
 {
@@ -21,6 +23,8 @@ class GenerationTask extends Model
         'attempts',
         'last_error',
         'qa_result',
+        'qa_verdict',
+        'qa_round',
         'proofreader_id',
         'proofread_at',
         'redactor_id',
@@ -35,7 +39,9 @@ class GenerationTask extends Model
     {
         return [
             'status' => TaskStatus::class,
+            'qa_verdict' => QaVerdict::class,
             'attempts' => 'integer',
+            'qa_round' => 'integer',
             'proofread_at' => 'datetime',
             'redacted_at' => 'datetime',
             'queued_at' => 'datetime',
@@ -57,6 +63,34 @@ class GenerationTask extends Model
     public function llmProvider(): BelongsTo
     {
         return $this->belongsTo(LlmProvider::class);
+    }
+
+    /**
+     * Every QA audit this task has had, oldest first — the first draft's, then
+     * one per revision round.
+     */
+    public function qaReviews(): HasMany
+    {
+        return $this->hasMany(QaReview::class)->orderBy('round');
+    }
+
+    /**
+     * The audit a rewrite has to answer: the newest one.
+     *
+     * `reorder()` is load-bearing. qaReviews() is ordered oldest-first for the
+     * proofreader's benefit, and chaining a descending order onto it leaves
+     * `round asc, round desc` — the ascending one wins, and the second rewrite
+     * would be sent the first draft's audit.
+     */
+    public function latestQaReview(): ?QaReview
+    {
+        return $this->qaReviews()->reorder()->orderByDesc('round')->orderByDesc('id')->first();
+    }
+
+    /** How many rewrites are left before the document is given up on. */
+    public function revisionsRemaining(): int
+    {
+        return max(0, (int) config('qa.max_revisions', 2) - $this->qa_round);
     }
 
     public function proofreader(): BelongsTo

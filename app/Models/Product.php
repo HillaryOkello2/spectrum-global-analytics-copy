@@ -128,6 +128,21 @@ class Product extends Model
             ->orderBy('approved_at');
     }
 
+    /**
+     * What the vault lists: everything except documents that failed quality
+     * control.
+     *
+     * The vault is the editorial record of what the system has produced, and a
+     * document the QA gate rejected is not that — it is model output nobody
+     * stands behind. It is still reachable with an explicit
+     * `?status=qa_failed`, so nothing is lost; it simply does not sit in the
+     * catalogue of work alongside documents that passed.
+     */
+    public function scopeInVault(Builder $query): Builder
+    {
+        return $query->where('status', '!=', ProductStatus::QaFailed);
+    }
+
     public function scopeFilter(Builder $query, array $filters): Builder
     {
         return $query

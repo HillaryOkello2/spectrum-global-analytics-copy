@@ -5,6 +5,7 @@ namespace App\Services\Access;
 use App\Exceptions\Domain\ProtectedRoleException;
 use App\Exceptions\Domain\RoleInUseException;
 use App\Models\User;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
@@ -43,10 +44,10 @@ class RoleService
             ]);
             $role->syncPermissions($permissions);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($role)
-                ->withProperties(['permissions' => $permissions])
+            Audit::of($role)->by($actor)
+                ->change('name', null, $role->name)
+                ->change('description', null, $role->description)
+                ->change('permissions', [], $permissions)
                 ->log('role created');
 
             return $role->load('permissions');
@@ -80,10 +81,8 @@ class RoleService
 
             $role->update($changes);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($role)
-                ->withProperties(['from' => $previous, 'to' => $changes])
+            Audit::of($role)->by($actor)
+                ->changes($previous, $changes)
                 ->log('role updated');
 
             return $role->load('permissions');
@@ -105,10 +104,8 @@ class RoleService
 
             $role->syncPermissions($permissions);
 
-            activity()
-                ->causedBy($actor)
-                ->performedOn($role)
-                ->withProperties(['from' => $previous, 'to' => $permissions])
+            Audit::of($role)->by($actor)
+                ->change('permissions', $previous, $permissions)
                 ->log('role permissions updated');
 
             return $role->load('permissions');
@@ -126,7 +123,10 @@ class RoleService
         }
 
         DB::transaction(function () use ($role, $actor): void {
-            activity()->causedBy($actor)->performedOn($role)->log('role deleted');
+            Audit::of($role)->by($actor)
+                ->change('name', $role->name, null)
+                ->change('permissions', $role->permissions->pluck('name')->all(), [])
+                ->log('role deleted');
 
             $role->delete();
         });

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
 use App\Notifications\PaymentReceived;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 
 class SubscriptionActivator
@@ -51,9 +52,15 @@ class SubscriptionActivator
             }
         });
 
-        activity()
-            ->causedBy($payment->user)
-            ->performedOn($payment)
+        Audit::of($payment)->by($payment->user)
+            ->change('status', PaymentStatus::Pending, $payment->status)
+            ->with([
+                'amount' => $payment->amount,
+                'currency' => $payment->currency,
+                'transactionCode' => $payment->transaction_code,
+                'gatewayRef' => $payment->gateway_ref,
+                'subscription' => $payment->subscription?->public_id,
+            ])
             ->log('payment confirmed; subscription activated');
 
         // Queued: it renders a PDF and sends mail, neither of which belongs in

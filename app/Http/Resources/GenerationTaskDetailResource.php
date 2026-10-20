@@ -20,6 +20,9 @@ class GenerationTaskDetailResource extends GenerationTaskResource
         return [
             ...parent::toArray($request),
             'product' => new ProductReviewResource($this->whenLoaded('product')),
+            // Every audit this document has had, oldest first — the rewrite
+            // history is only legible as a series.
+            'qaReviews' => QaReviewResource::collection($this->whenLoaded('qaReviews')),
             'llmProvider' => $this->whenLoaded('llmProvider', fn () => [
                 'publicId' => $this->llmProvider->public_id,
                 'name' => $this->llmProvider->name,

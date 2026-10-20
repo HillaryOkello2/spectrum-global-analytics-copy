@@ -2,6 +2,7 @@
 
 namespace App\Services\Llm\Drivers;
 
+use App\Services\Generation\RevisionPromptBuilder;
 use App\Services\Llm\Contracts\LlmClient;
 use App\Services\Llm\DTOs\LlmResult;
 use Illuminate\Support\Str;
@@ -18,12 +19,22 @@ class FakeLlmClient implements LlmClient
 {
     private const DISCLAIMER = '_Placeholder content produced by the local development stub (LLM_FAKE=true). This is not real analysis._';
 
+    /**
+     * Marks a body this stub produced as a rewrite. The stub's own auditor
+     * reads it, which is what lets the QA → revision → re-audit loop be driven
+     * end to end locally with LLM_FAKE_QA_VERDICT=first_red.
+     */
+    private const REVISED = '_Revised draft (local development stub)._';
+
     public function __construct(private readonly string $modelId) {}
 
     public function generate(string $prompt): LlmResult
     {
         return new LlmResult(
             text: match (true) {
+                // Checked first: a revision prompt also carries a document
+                // after a `---` fence, so isQaPass() matches it too.
+                $this->isRevisionPass($prompt) => $this->article($prompt, revised: true),
                 $this->isQaPass($prompt) => $this->qaReport($prompt),
                 $this->isTopicPass($prompt) => $this->topicVariables($prompt),
                 default => $this->article($prompt),
@@ -39,6 +50,15 @@ class FakeLlmClient implements LlmClient
     private function isQaPass(string $prompt): bool
     {
         return str_contains($prompt, "\n\n---\n\n");
+    }
+
+    /**
+     * ReviseProductJob's prompt, which carries the specification, the rejected
+     * draft and the audit report.
+     */
+    private function isRevisionPass(string $prompt): bool
+    {
+        return str_contains($prompt, RevisionPromptBuilder::MARKER);
     }
 
     /**
@@ -85,7 +105,7 @@ class FakeLlmClient implements LlmClient
         return json_encode($values, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
-    private function article(string $prompt): string
+    private function article(string $prompt, bool $revised = false): string
     {
         $subject = $this->subject($prompt);
         $seed = crc32($prompt);
@@ -115,23 +135,64 @@ class FakeLlmClient implements LlmClient
 
             'On balance the trajectory favours continuity with gradual adjustment. The principal risk to this view is a shock originating outside the frame of this assessment, which would compress the timelines above rather than change their direction.',
 
+            ...($revised ? [self::REVISED] : []),
+
             self::DISCLAIMER,
         ]);
     }
 
+    /**
+     * An audit report in the protocol's own output template, because the
+     * verdict is parsed now (QaReportParser) and decides whether the document
+     * reaches the vault. A stub that answered in free prose would leave the
+     * whole gate untestable without spending credit.
+     *
+     * LLM_FAKE_QA_VERDICT drives it:
+     *   green     — always passes (the default; keeps the happy path intact)
+     *   red       — always fails, so the gate and `qa_failed` are reachable
+     *   first_red — fails the first draft and passes the rewrite, which drives
+     *               the whole QA → revision → re-audit loop
+     */
     private function qaReport(string $prompt): string
     {
-        $score = 82 + (crc32($prompt) % 15);
+        $mode = (string) config('llm.fake_qa_verdict', 'green');
 
-        return implode("\n\n", [
-            "Quality assurance review complete — overall score {$score}/100. The draft is structurally sound and suitable for proofreading.",
+        $failing = match ($mode) {
+            'red' => true,
+            // The audited body follows the `---` fence; a rewrite this stub
+            // produced carries its own marker.
+            'first_red' => ! str_contains(Str::after($prompt, "\n\n---\n\n"), self::REVISED),
+            default => false,
+        };
 
-            "**Structure.** Sections follow the expected order: summary, key judgements, drivers, indicators, outlook. No section is empty.\n"
-                ."**Tone.** Analytic register maintained throughout; no advocacy language detected.\n"
-                .'**Claims.** Assertions are hedged appropriately and confidence is stated explicitly.',
-
-            'Recommended proofreader checks: verify terminology against the house style guide, confirm the stated confidence matches the strength of the reasoning, and tighten any repetition between the drivers and outlook sections.',
-
+        return implode("\n", [
+            'SPECTRUM GLOBAL ANALYTICS',
+            'QUALITY CONTROL & VETTING AUDIT REPORT',
+            'DOCUMENT AUDITED: '.Str::limit($this->subject($prompt), 60),
+            'AUDIT DATE: '.now()->toDateString(),
+            '1. STRATEGIC-ONLY MANDATE VERIFICATION: '.($failing ? 'FAIL' : 'PASS'),
+            '- Notes/Deficiencies: '.($failing
+                ? 'Paragraph 3 recites tactical detail with no structural claim attached (Necessity Test).'
+                : 'None.'),
+            '2. STRUCTURAL INTEGRITY AUDIT: PASS',
+            '- Notes/Deficiencies: None.',
+            '3. SYNTAX & LINGUISTIC PRECISION AUDIT: PASS',
+            '- Notes/Deficiencies: None.',
+            '4. FACTUAL RIGOR & ANTI-HALLUCINATION AUDIT: '.($failing ? 'FAIL' : 'PASS'),
+            '- Notes/Deficiencies: '.($failing
+                ? 'Two current-period figures are stated without support.'
+                : 'None.'),
+            '5. TEMPORAL RIGOR & RELEVANCE AUDIT: PASS',
+            '- Notes/Deficiencies: None.',
+            str_repeat('=', 70),
+            'FINAL VERDICT: '.($failing
+                ? 'RED LIGHT - REJECTED FOR RE-RUN'
+                : 'GREEN LIGHT - APPROVED FOR CLIENT RELEASE'),
+            'RE-RUN INSTRUCTIONS (IF RED LIGHT): '.($failing
+                ? 'Cut the tactical inventory in paragraph 3 or attach a structural claim to each fact retained. Remove the two unsupported current-period figures rather than replacing them.'
+                : 'None.'),
+            str_repeat('=', 70),
+            '',
             self::DISCLAIMER,
         ]);
     }

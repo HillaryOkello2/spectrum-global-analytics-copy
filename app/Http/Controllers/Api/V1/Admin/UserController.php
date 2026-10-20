@@ -9,6 +9,7 @@ use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\Access\StaffAccountService;
 use App\Services\Access\UserAccessService;
+use App\Support\Audit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -68,9 +69,14 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user): UserResource
     {
-        $user->update($request->safe()->except('roles'));
+        $attributes = $request->safe()->except('roles');
+        $before = $user->only(array_keys($attributes));
 
-        activity()->causedBy($request->user())->performedOn($user)->log('admin user updated');
+        $user->update($attributes);
+
+        Audit::of($user)->by($request->user())
+            ->changes($before, $user->only(array_keys($attributes)))
+            ->log('admin user updated');
 
         if ($request->has('roles')) {
             $user = $this->access->syncRoles($user, $request->validated('roles'), $request->user());
