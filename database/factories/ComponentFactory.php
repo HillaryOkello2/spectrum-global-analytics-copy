@@ -23,6 +23,7 @@ class ComponentFactory extends Factory
             'assigned_llm_provider_id' => LlmProvider::factory(),
             'batch' => fake()->numberBetween(1, 4),
             'is_transactional' => false,
+            'is_virtual' => false,
             'sort_order' => 0,
             'prompt_template' => 'Write an analysis of [PRIMARY_TOPIC]. Reference: [DOCUMENT_REF], dated [DATE].',
             'topic_prompt' => null,
@@ -50,6 +51,23 @@ class ComponentFactory extends Factory
             'prompt_template' => 'Title: [DOCUMENT_TITLE]. Byline: [BYLINE]. Subject: [PRIMARY_TOPIC]. '
                 .'Reference: [DOCUMENT_REF], dated [DATE].',
             'title_template' => '[DOCUMENT_TITLE] — [DATE]',
+        ]);
+    }
+
+    /**
+     * The Abstract Papers shape: generates nothing, owns no products, and
+     * presents the published abstracts of every other component.
+     */
+    public function virtual(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_virtual' => true,
+            'assigned_llm_provider_id' => null,
+            'prompt_template' => null,
+            'topic_prompt' => null,
+            'qa_prompt_template' => null,
+            'variables' => [],
+            'generation_frequency' => null,
         ]);
     }
 

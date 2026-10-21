@@ -26,6 +26,11 @@ return new class extends Migration
             // is gone, but the purchase + gateway path stays wired so bringing a
             // transactional component back is a seeder change, not a rebuild.
             $table->boolean('is_transactional')->default(false);
+            // A component that generates nothing of its own and instead
+            // presents other components' work — Abstract Papers, which is the
+            // whole catalogue's abstracts in one place. Nothing in the
+            // generation pipeline ever targets one of these.
+            $table->boolean('is_virtual')->default(false);
             $table->unsignedInteger('sort_order')->default(0);
 
             // --- Client prompt pack (2026-08 scope change) ---------------------

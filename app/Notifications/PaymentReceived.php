@@ -31,6 +31,8 @@ class PaymentReceived extends Notification implements ShouldQueue
 
     public const UPGRADE = 'upgrade';
 
+    public const DOWNGRADE = 'downgrade';
+
     public function __construct(
         private readonly Payment $payment,
         private readonly string $kind = self::SIGNUP,
@@ -53,12 +55,17 @@ class PaymentReceived extends Notification implements ShouldQueue
         $mail = (new MailMessage)
             ->subject(match ($this->kind) {
                 self::UPGRADE => 'Your subscription has been upgraded',
+                self::DOWNGRADE => 'Your new tier has started',
                 self::RENEWAL => 'Your subscription has been renewed',
                 default => 'Your subscription is active',
             })
             ->greeting("Hello {$notifiable->first_name},")
             ->line(match ($this->kind) {
                 self::UPGRADE => "We have received {$amount}. You are now on the {$tier} tier.",
+                // The subscriber asked for this one a term ago, so it says so
+                // rather than reading as a surprise change of plan.
+                self::DOWNGRADE => "We have received {$amount}. The change you asked for has taken effect: "
+                    ."you are now on the {$tier} tier.",
                 self::RENEWAL => "We have received {$amount}. Your {$tier} subscription has been renewed.",
                 default => "We have received {$amount}. Your {$tier} subscription is now active.",
             });

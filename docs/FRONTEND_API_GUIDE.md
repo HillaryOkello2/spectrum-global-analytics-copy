@@ -9,6 +9,27 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ✅ Added: Abstract Papers, downgrades, welcome mail (2026-10-22)
+
+Three things, all additive. Details in `API_REFERENCE.md` — the "Added — 2026-10-22" table at the top.
+
+- **Abstract Papers (`AP`)** is a tenth tile in the catalogue grid that is not a tenth product line.
+  It writes nothing: it carries **every published abstract** in the catalogue, newest first, and each
+  entry's `product` key is the `publicId` of the document that abstract belongs to. Open it with
+  `GET /products/{product}` exactly as from any other listing — the usual entitlement rules apply, so
+  nothing leaks. Tell it apart by **`isVirtual: true`** on the component object, never by the code.
+  `GET /catalog/abstracts` and `GET /catalog/components/AP/products` return the same payload.
+- **Downgrades** — `POST /me/subscription/downgrade` schedules a move to a cheaper tier at the end of
+  the paid term. `200`, no payment, nothing changes today. The subscription then carries
+  `pendingTier` + `pendingTierEffectiveAt` (both `null` on every ordinary subscription) — show that
+  as a banner. A tier picker can now offer every tier: higher-priced → `upgrade` (202 + payment),
+  lower-priced → `downgrade` (200), current tier → cancels a scheduled one.
+- **Welcome email on sign-up**, for every subscriber including freemium. Nothing to call. A paid
+  signup gets a "we have reserved your account, complete payment" version rather than a welcome that
+  promises access it has not paid for, so your success screen can stop apologising for the silence.
+
+---
+
 ## ✅ Added: subscribers now get emails (2026-10-05)
 
 The backend sends these on its own; nothing to call, but your copy should match what lands in their
@@ -163,9 +184,12 @@ subscriber portal — and that page posts both values, with the new password, to
 
 ### Public Catalogue (public, no token)
 Browse without logging in (FR-08):
-- `GET /catalog/components` — the 9 Components, in `sortOrder`, each with `productsCount` and its
-  own `averageRating`/`ratingsCount` (absent average = nobody has rated it).
+- `GET /catalog/components` — the 9 Components plus **Abstract Papers**, in `sortOrder`, each with
+  `productsCount`, its own `averageRating`/`ratingsCount` (absent average = nobody has rated it) and
+  `isVirtual` (`true` for Abstract Papers only).
 - `GET /catalog/components/{component}/products` — published products (title + excerpt only), paginated.
+- `GET /catalog/abstracts` — **Abstract Papers**: every published abstract, paginated, each naming
+  the `product` it belongs to. `?component=DB` narrows it; `?search=` matches title or abstract.
 - `GET /products/{product}/preview` — **abstract + `locked: true`** for any product (the gated
   teaser: render the abstract, a lock, and a Subscribe CTA).
 - `GET /tiers` — subscription tier cards with their per-component allocations (for the pricing page).
@@ -186,7 +210,11 @@ nested inside a product payload.
 - `GET /me/stats` — the caller's own `articlesRead`, `reads`, `ratingsGiven`, `averageRatingGiven`.
 - `GET /me`, `PATCH /me`, `PUT /me/password` — profile + password. **Open to staff too**, the only
   routes here that are: staff need them to change the temporary password they are emailed.
-- `GET /me/subscription` — subscription details incl. tier allocations.
+- `GET /me/subscription` — subscription details incl. tier allocations, and `pendingTier` /
+  `pendingTierEffectiveAt` when a downgrade is scheduled.
+- `POST /me/subscription/upgrade` — higher tier, `202` + payment, fresh term once it clears.
+- `POST /me/subscription/downgrade` — cheaper tier, `200`, applied at the end of the paid term.
+  `DELETE` the same path to call it off.
 - `GET /me/invoices`, `GET /me/invoices/{invoice}` — billing history.
 - `GET /products/{product}` — **entitlement-gated product**, served at one of three content levels.
   This is the key one. Branch on `locked` and `redacted`, not on which fields are present:

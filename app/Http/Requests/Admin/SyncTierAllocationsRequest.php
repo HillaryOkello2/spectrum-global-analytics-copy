@@ -52,6 +52,20 @@ class SyncTierAllocationsRequest extends FormRequest
                         continue;
                     }
 
+                    // An abstract is public to every visitor (FR-09), so a
+                    // component that holds nothing but abstracts has nothing
+                    // for a tier to unlock or withhold. Allocating against it
+                    // would read as a promise the entitlement check never
+                    // consults.
+                    if ($component->isVirtual()) {
+                        $validator->errors()->add(
+                            "allocations.{$index}.component",
+                            "{$component->code} lists public abstracts only, so it takes no tier allocation.",
+                        );
+
+                        continue;
+                    }
+
                     if (in_array($component->id, $seen, true)) {
                         $validator->errors()->add("allocations.{$index}.component", "{$component->code} appears more than once.");
                     }

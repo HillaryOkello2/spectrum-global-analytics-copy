@@ -126,6 +126,33 @@ class ComponentSeeder extends Seeder
     ];
 
     /**
+     * Abstract Papers — reinstated 2026-10-21, but not as a tenth prompt.
+     *
+     * It was dropped from the August pack because the client supplied no
+     * prompt for it, and there is still none: what the client wants is a place
+     * that carries the abstracts of everything the other nine have produced,
+     * with each entry opening the product it was lifted from. So it writes
+     * nothing and owns no products — `is_virtual` keeps it out of the
+     * generation pipeline, the vault's editorial listing and the tier access
+     * matrix, and the catalogue fills it from every other component's
+     * published work (see App\Services\Catalog\AbstractLibrary).
+     *
+     * Sorted last so it reads as the index to the catalogue rather than a
+     * product line within it.
+     */
+    public const ABSTRACT_PAPERS = [
+        'code' => 'AP',
+        'ref_code' => 'AP',
+        'name' => 'Abstract Papers',
+        'batch' => 3,
+        'is_virtual' => true,
+        'generation_frequency' => null,
+        'variables' => [],
+        'fixed_variables' => [],
+        'title_template' => null,
+    ];
+
+    /**
      * Which model writes — and, by FR-26, audits — each component.
      *
      * The client has not specified this (Assumptions §21, open question). It
@@ -182,6 +209,22 @@ class ComponentSeeder extends Seeder
                 'sort_order' => $index + 1,
             ]);
         }
+
+        // No prompts, no provider and no queue: nothing is ever generated for
+        // it. Given the sort order after the nine, so it closes the catalogue.
+        Component::updateOrCreate(
+            ['code' => self::ABSTRACT_PAPERS['code']],
+            [
+                ...self::ABSTRACT_PAPERS,
+                'prompt_template' => null,
+                'topic_prompt' => null,
+                'qa_prompt_template' => null,
+                'assigned_llm_provider_id' => null,
+                'is_transactional' => false,
+                'queue_name' => 'llm',
+                'sort_order' => count(self::COMPONENTS) + 1,
+            ],
+        );
     }
 
     /**

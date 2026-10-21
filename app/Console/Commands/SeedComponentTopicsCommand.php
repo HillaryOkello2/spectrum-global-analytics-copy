@@ -89,6 +89,8 @@ class SeedComponentTopicsCommand extends Command
         $code = $this->argument('component');
 
         return Component::query()
+            // Abstract Papers writes nothing, so there is no topic to seed.
+            ->generating()
             ->when($code, fn ($query) => $query->where(
                 fn ($query) => $query->where('code', $code)->orWhere('public_id', $code),
             ))

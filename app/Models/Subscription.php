@@ -17,6 +17,7 @@ class Subscription extends Model
     protected $fillable = [
         'user_id',
         'tier_id',
+        'pending_tier_id',
         'status',
         'starts_at',
         'ends_at',
@@ -42,6 +43,33 @@ class Subscription extends Model
         return $this->belongsTo(SubscriptionTier::class, 'tier_id');
     }
 
+    /**
+     * The cheaper tier this subscription has been scheduled to drop to at the
+     * end of the current term. Null unless a downgrade is pending.
+     */
+    public function pendingTier(): BelongsTo
+    {
+        return $this->belongsTo(SubscriptionTier::class, 'pending_tier_id');
+    }
+
+    /**
+     * The tier the NEXT term will run on: the scheduled downgrade if there is
+     * one, otherwise the current tier. This is what a renewal is priced
+     * against, so that a subscriber who has asked to drop to a cheaper tier is
+     * charged the cheaper price rather than the one they are leaving.
+     */
+    public function nextTier(): ?SubscriptionTier
+    {
+        return $this->pending_tier_id !== null
+            ? $this->pendingTier()->first()
+            : $this->tier;
+    }
+
+    public function hasPendingDowngrade(): bool
+    {
+        return $this->pending_tier_id !== null;
+    }
+
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
@@ -55,6 +83,19 @@ class Subscription extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', SubscriptionStatus::Active);
+    }
+
+    /**
+     * Lapsed subscriptions that are to land on a free tier rather than simply
+     * close: the subscriber asked to drop to it, so the term rolling over is
+     * the moment that takes effect, not the moment access ends.
+     */
+    public function scopeLapsedOntoFreeTier(Builder $query): Builder
+    {
+        return $query->lapsed()->whereHas(
+            'pendingTier',
+            fn (Builder $tier) => $tier->where('price', 0),
+        );
     }
 
     public function scopeLapsed(Builder $query): Builder

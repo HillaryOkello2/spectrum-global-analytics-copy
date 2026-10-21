@@ -74,7 +74,11 @@ class SubscriptionActivator
     private function kindOf(Payment $payment): string
     {
         if ($payment->payable instanceof SubscriptionTier) {
-            return PaymentReceived::UPGRADE;
+            // Both arrive as a payment against a tier; what separates them is
+            // whether the subscriber had scheduled this one in advance.
+            return $payment->subscription?->pending_tier_id === $payment->payable->id
+                ? PaymentReceived::DOWNGRADE
+                : PaymentReceived::UPGRADE;
         }
 
         return $payment->subscription?->starts_at === null
@@ -84,16 +88,10 @@ class SubscriptionActivator
 
     private function applyToSubscription(Payment $payment, Subscription $subscription): void
     {
-        // Upgrade: the payment was raised against the target tier.
+        // Tier change: the payment was raised against the target tier, either
+        // as an upgrade or as a scheduled downgrade being renewed into.
         if ($payment->payable instanceof SubscriptionTier) {
-            $subscription->update([
-                'tier_id' => $payment->payable->id,
-                'status' => SubscriptionStatus::Active,
-                // A fresh term starts its expiry notices over.
-                'last_reminder_days' => null,
-                'starts_at' => now(),
-                'ends_at' => now()->addMonth(),
-            ]);
+            $this->applyTierChange($subscription, $payment->payable);
 
             return;
         }
@@ -118,6 +116,37 @@ class SubscriptionActivator
         $subscription->update([
             'status' => SubscriptionStatus::Active,
             'last_reminder_days' => null,
+            'ends_at' => $base->copy()->addMonth(),
+        ]);
+    }
+
+    /**
+     * Move the subscription onto a tier that has just been paid for.
+     *
+     * An upgrade starts a fresh month — it was charged the new tier's full
+     * price, so the term it buys begins now. A downgrade the subscriber
+     * scheduled is different: it was waiting for this term to end, so it
+     * extends from the existing end date and never costs them days they had
+     * already paid for.
+     *
+     * Either way `pending_tier_id` is cleared: whatever was scheduled has
+     * either just happened or has been overtaken by an upgrade.
+     */
+    private function applyTierChange(Subscription $subscription, SubscriptionTier $tier): void
+    {
+        $scheduled = $subscription->pending_tier_id === $tier->id;
+
+        $base = $scheduled && $subscription->ends_at?->isFuture()
+            ? $subscription->ends_at
+            : now();
+
+        $subscription->update([
+            'tier_id' => $tier->id,
+            'pending_tier_id' => null,
+            'status' => SubscriptionStatus::Active,
+            // A fresh term starts its expiry notices over.
+            'last_reminder_days' => null,
+            'starts_at' => $scheduled ? ($subscription->starts_at ?? now()) : now(),
             'ends_at' => $base->copy()->addMonth(),
         ]);
     }

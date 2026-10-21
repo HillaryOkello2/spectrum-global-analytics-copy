@@ -13,7 +13,7 @@ it('audits the Daily Brief against its own protocol and everything else against 
 
     expect(Component::where('code', 'DB')->value('qa_prompt_template'))->toBe($daily);
 
-    Component::where('code', '!=', 'DB')->get()->each(
+    Component::generating()->where('code', '!=', 'DB')->get()->each(
         fn (Component $component) => expect($component->qa_prompt_template)->toBe($shared),
     );
 });

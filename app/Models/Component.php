@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Frequency;
 use App\Enums\ProductStatus;
 use App\Traits\HasPublicId;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,6 +23,7 @@ class Component extends Model
         'assigned_llm_provider_id',
         'batch',
         'is_transactional',
+        'is_virtual',
         'sort_order',
         'prompt_template',
         'topic_prompt',
@@ -38,6 +40,7 @@ class Component extends Model
         return [
             'batch' => 'integer',
             'is_transactional' => 'boolean',
+            'is_virtual' => 'boolean',
             'variables' => 'array',
             'fixed_variables' => 'array',
             'generation_frequency' => Frequency::class,
@@ -51,7 +54,34 @@ class Component extends Model
      */
     public function canCommissionTopics(): bool
     {
-        return filled($this->topic_prompt) && filled($this->prompt_template);
+        return ! $this->is_virtual
+            && filled($this->topic_prompt)
+            && filled($this->prompt_template);
+    }
+
+    /**
+     * A component that writes nothing and instead presents what the others
+     * have written. Abstract Papers is the only one: it carries every
+     * published abstract in the catalogue, and its entries open the product
+     * each abstract was lifted from.
+     *
+     * Virtual components are kept out of the generation pipeline, out of the
+     * vault's editorial listing, and out of the tier access matrix — an
+     * abstract is public to begin with (FR-09), so there is nothing for a tier
+     * to unlock.
+     */
+    public function isVirtual(): bool
+    {
+        return (bool) $this->is_virtual;
+    }
+
+    /**
+     * Components that actually produce documents — everything the generation
+     * pipeline, the vault and the access matrix are about.
+     */
+    public function scopeGenerating(Builder $query): Builder
+    {
+        return $query->where('is_virtual', false);
     }
 
     /**

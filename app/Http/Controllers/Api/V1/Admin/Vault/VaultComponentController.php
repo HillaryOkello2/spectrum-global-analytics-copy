@@ -23,6 +23,11 @@ class VaultComponentController extends Controller
         // The rating average follows suit and spans them all.
         return ComponentResource::collection(
             Component::query()
+                // The vault is the editorial record of what has been produced.
+                // Abstract Papers produces nothing and owns no products — it
+                // re-presents other components' published abstracts — so it
+                // would sit here as a permanent empty row.
+                ->generating()
                 ->withCount(['products' => fn (Builder $query) => $query->inVault()])
                 ->withCount(['productRatings as ratings_count'])
                 ->withAvg(['productRatings as ratings_avg_stars'], 'stars')

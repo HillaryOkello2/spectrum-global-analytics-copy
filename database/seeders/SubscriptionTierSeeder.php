@@ -77,7 +77,11 @@ class SubscriptionTierSeeder extends Seeder
                 'sort_order' => ++$sortOrder,
             ]);
 
-            Component::all()->each(function (Component $component) use ($tier, $definition): void {
+            // Only the components that produce documents. Abstract Papers
+            // holds nothing but abstracts, which are public to every visitor
+            // (FR-09), so no tier allocates against it — see
+            // SyncTierAllocationsRequest, which refuses one.
+            Component::generating()->get()->each(function (Component $component) use ($tier, $definition): void {
                 [$accessType, $limit] = [...$definition['allocations'][$component->code], null];
 
                 TierAllocation::updateOrCreate(

@@ -27,13 +27,25 @@ class StoreTopicRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if (filled($this->input('prompt_text'))) {
-                    return;
-                }
-
                 $component = is_string($this->input('component'))
                     ? Component::firstWhere('public_id', $this->input('component'))
                     : null;
+
+                // Abstract Papers writes nothing — it lists what the other
+                // components have published. A topic against it would queue a
+                // generation run with no prompt to run.
+                if ($component !== null && $component->isVirtual()) {
+                    $validator->errors()->add(
+                        'component',
+                        "{$component->name} does not generate documents of its own, so it takes no topics.",
+                    );
+
+                    return;
+                }
+
+                if (filled($this->input('prompt_text'))) {
+                    return;
+                }
 
                 if ($component !== null && blank($component->prompt_template)) {
                     $validator->errors()->add(

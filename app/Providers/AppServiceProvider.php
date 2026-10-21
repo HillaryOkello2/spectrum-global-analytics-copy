@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\User;
 use App\Services\Access\FrontendLinks;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -39,5 +40,23 @@ class AppServiceProvider extends ServiceProvider
         ResetPassword::createUrlUsing(
             fn (User $user, string $token) => app(FrontendLinks::class)->resetPassword($user, $token),
         );
+
+        // The reset mail is the one the framework composes rather than this
+        // application, and the one a subscriber is likeliest to see first. Its
+        // stock copy opens "Hello!" and explains itself in the passive voice;
+        // this says the same things in the house voice, by name, and keeps the
+        // framework's own token and expiry handling.
+        ResetPassword::toMailUsing(function (User $user, string $token): MailMessage {
+            $minutes = config('auth.passwords.'.config('auth.defaults.passwords').'.expire');
+
+            return (new MailMessage)
+                ->subject('Reset your '.config('app.name').' password')
+                ->greeting("Hello {$user->first_name},")
+                ->line('Someone asked to reset the password for the account held at '.$user->email.'.')
+                ->action('Choose a new password', app(FrontendLinks::class)->resetPassword($user, $token))
+                ->line("This link works once, and expires in {$minutes} minutes.")
+                ->line('If this was not you, no action is needed — your password has not changed, '
+                    .'and the link above is useless to anyone who cannot read this inbox.');
+        });
     }
 }

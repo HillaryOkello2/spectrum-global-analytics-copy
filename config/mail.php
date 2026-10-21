@@ -110,6 +110,51 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Markdown Mail Theme
+    |--------------------------------------------------------------------------
+    |
+    | Every notification this application sends is a Markdown mailable, so the
+    | theme below is what a subscriber actually sees. `spectrum` carries the
+    | public site's palette (navy #10172D, brass #AA8940) and replaces
+    | Laravel's stock indigo-and-grey default.
+    |
+    */
+
+    'markdown' => [
+
+        'theme' => env('MAIL_THEME', 'spectrum'),
+
+        'paths' => [
+            resource_path('views/vendor/mail'),
+        ],
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Brand
+    |--------------------------------------------------------------------------
+    |
+    | The masthead and footer of every email. `url` is where the wordmark
+    | links. It is left null unless set: APP_URL is this API, which serves no
+    | page a reader can open, so the views fall back to the subscriber app
+    | (config/frontend.php) rather than to it. Reading that default here would
+    | mean copying it, since one config file cannot read another as it loads.
+    |
+    */
+
+    'brand' => [
+
+        'tagline' => env('MAIL_BRAND_TAGLINE', 'Strategic Intelligence'),
+
+        'url' => env('MAIL_BRAND_URL'),
+
+        'support_email' => env('MAIL_SUPPORT_ADDRESS'),
+
+    ],
+
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),

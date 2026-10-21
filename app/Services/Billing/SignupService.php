@@ -9,6 +9,7 @@ use App\Exceptions\Domain\TierNotPurchasableException;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
 use App\Models\User;
+use App\Services\Access\AccountMailer;
 use App\Services\Billing\DTOs\SignupResult;
 use App\Services\Payments\PaymentInitiator;
 use App\Support\Audit;
@@ -18,6 +19,7 @@ class SignupService
 {
     public function __construct(
         private readonly PaymentInitiator $payments,
+        private readonly AccountMailer $mailer,
     ) {}
 
     /**
@@ -65,6 +67,10 @@ class SignupService
             ->change('ends_at', null, $subscription->ends_at)
             ->log('freemium signup activated');
 
+        // Every subscriber hears from us the moment the account exists, paid or
+        // not. Before this a freemium signup got no mail at all.
+        $this->mailer->sendWelcome($user, $subscription);
+
         return new SignupResult(
             user: $user,
             subscription: $subscription,
@@ -91,6 +97,11 @@ class SignupService
 
         // Only after the commit: see PaymentInitiator::send().
         $initiation = $this->payments->send($payment);
+
+        // After the hand-off, so nothing about the mail can delay the payment
+        // prompt the signup is waiting on. This one greets a reserved account
+        // rather than an open one — see WelcomeSubscriber.
+        $this->mailer->sendWelcome($user, $subscription, $payment);
 
         return new SignupResult(
             user: $user,

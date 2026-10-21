@@ -18,7 +18,8 @@ it('serves every component queue with a worker', function (): void {
 
     $served = Str::of(config('queue.worker_queues.generation'))->explode(',')->map(fn ($q) => trim($q));
 
-    expect(Component::pluck('queue_name')->unique()->values()->all())
+    // Only the components that generate: Abstract Papers queues nothing.
+    expect(Component::generating()->pluck('queue_name')->unique()->values()->all())
         ->each->toBeIn($served->all());
 });
 

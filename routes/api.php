@@ -14,6 +14,11 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             ->only('index')->names('catalog.components');
         Route::apiResource('catalog/components.products', Public\Catalog\ComponentProductController::class)
             ->only('index')->names('catalog.components.products');
+        // Abstract Papers: every published abstract in one listing, each entry
+        // naming the product it belongs to. Also reachable through the grid as
+        // catalog/components/AP/products.
+        Route::apiResource('catalog/abstracts', Public\Catalog\AbstractPaperController::class)
+            ->only('index')->names('catalog.abstracts');
         Route::apiResource('tiers', Public\TierController::class)->only('index');
         Route::get('products/{product}/preview', Public\ProductPreviewController::class)->name('products.preview');
 
@@ -58,6 +63,12 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             Route::get('me/subscription', [Subscriber\SubscriptionController::class, 'show'])->name('me.subscription');
             Route::post('me/subscription/renew', Subscriber\RenewSubscriptionController::class)->name('me.subscription.renew');
             Route::post('me/subscription/upgrade', Subscriber\UpgradeSubscriptionController::class)->name('me.subscription.upgrade');
+            // Downgrades take effect at the end of the paid term, so they take
+            // no payment and return the subscription rather than instructions.
+            Route::post('me/subscription/downgrade', [Subscriber\DowngradeSubscriptionController::class, 'store'])
+                ->name('me.subscription.downgrade');
+            Route::delete('me/subscription/downgrade', [Subscriber\DowngradeSubscriptionController::class, 'destroy'])
+                ->name('me.subscription.downgrade.cancel');
             Route::apiResource('me/invoices', Subscriber\InvoiceController::class)
                 ->only(['index', 'show'])->names('me.invoices');
             Route::apiResource('products', Subscriber\ProductController::class)->only('show');

@@ -30,6 +30,27 @@ example success and error responses.
 
 ---
 
+## Added — 2026-10-22 (Abstract Papers, downgrades, welcome mail)
+
+All additive — no endpoint changed shape, nothing was removed.
+
+| What | Where |
+|---|---|
+| **New component: Abstract Papers (`AP`)** — every published abstract in one listing, each naming the product it belongs to. It generates nothing of its own. | `GET /catalog/abstracts`, and `GET /catalog/components/AP/products` |
+| **New:** `isVirtual` on every component object — `true` only for Abstract Papers | `GET /catalog/components` |
+| **New:** schedule a **downgrade**, effective at the end of the paid term | `POST /me/subscription/downgrade` |
+| **New:** cancel a scheduled downgrade | `DELETE /me/subscription/downgrade` |
+| **New:** `pendingTier` + `pendingTierEffectiveAt` on every subscription object | `GET /me/subscription`, `GET /auth/me`, `GET /dashboard` |
+| **New:** every subscriber — freemium included — is emailed a welcome on sign-up | no API change |
+
+**For the tier picker.** Between upgrade and downgrade you can now offer every tier: send a
+higher-priced target to `POST /me/subscription/upgrade` (returns `202` + payment instructions) and a
+lower-priced one to `POST /me/subscription/downgrade` (returns `200`, no payment). Sending the
+subscriber's **current** tier to downgrade cancels a scheduled one, so a single picker needs no
+separate "cancel" control.
+
+---
+
 ## Added — 2026-10-20 (LLM health, QA gate, audit detail)
 
 Three changes. The first two are additive; the third changes the shape of one endpoint's rows
@@ -91,7 +112,7 @@ the pillar removal below still applies.
 | `A7` | **`RP`** | Strategic Analytics Research Papers |
 | `A8` + `A9` | **`WP`** | Analytics White Papers *(Corporate and Governmental merged — the client supplies one WP prompt)* |
 | — *(new)* | **`HM`** | High Magnitude Crisis Simulation Project |
-| `A1` | **removed** | Abstract Papers — no prompt in the client pack |
+| `A1` | **removed**, then back as **`AP`** on 2026-10-22 | Abstract Papers — still has no prompt, because it writes nothing: it now carries every *other* component's published abstracts. See the 2026-10-22 note above |
 
 | What changed | Do this instead |
 |---|---|
@@ -657,10 +678,17 @@ Lists all 9 Components, in `sortOrder` (DB first). This is the catalogue's entry
 ```json
 {
   "data": [
-    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "sortOrder": 1, "productsCount": 3, "averageRating": 4.6, "ratingsCount": 28 }
+    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "isVirtual": false, "sortOrder": 1, "productsCount": 3, "averageRating": 4.6, "ratingsCount": 28 },
+    { "publicId": "…", "name": "Abstract Papers", "code": "AP", "batch": 3, "isTransactional": false, "isVirtual": true, "sortOrder": 10, "productsCount": 41, "averageRating": 4.4, "ratingsCount": 180 }
   ]
 }
 ```
+
+**`isVirtual`** — `true` for **Abstract Papers** only. That component writes nothing: it carries the
+abstracts of every *other* component's published work. Its tile drills into an abstract listing
+rather than a product listing (both `GET /catalog/abstracts` and
+`GET /catalog/components/AP/products` return it), and its `productsCount` and rating span the whole
+catalogue, because that is what it lists. Everything else is `isVirtual: false`.
 
 **`productsCount`** — how many products the component holds, so you can show a badge without opening it. On every public and subscriber endpoint it counts **published, non-hidden** products, exactly the ones `/catalog/components/{component}/products` would list.
 
@@ -712,6 +740,50 @@ endpoints. Absent (not `0`) when ratings were not aggregated or none exist, same
 component-level pair.
 
 > Listings never include the body — only a short `excerpt` taken from the **abstract**. Every product embeds its `component`, so you can resolve a product's place in the catalogue from the product payload alone.
+
+---
+
+### GET `/catalog/abstracts`
+**Abstract Papers.** Every published abstract in the catalogue, newest first, whichever component
+wrote it. **Paginated** (20/page). No token.
+
+This is the whole of the `AP` component: it generates nothing of its own, it owns no products, and
+it shows abstracts only. `GET /catalog/components/AP/products` returns exactly the same payload, so
+the catalogue grid can drill into every tile the same way.
+
+**Query:** `component` (optional — a component `code` or `publicId`, e.g. `DB`), `search` (optional
+— matches title **or** abstract text), `page`.
+
+**Response (`200`):**
+```json
+{
+  "data": [
+    {
+      "product": "9f1c…",
+      "code": "SGA.DB.001.08.26",
+      "title": "Red Sea Chokepoint Risk Outlook",
+      "byline": "M. Aldous",
+      "abstract": "The abstract in full — not the 160-character excerpt the product listings carry.",
+      "averageRating": 4.6, "ratingsCount": 12,
+      "wordCount": 4820, "readMinutes": 22,
+      "publishedAt": "2026-07-15 12:11:57",
+      "component": { "publicId": "…", "code": "DB", "name": "Daily Strategic Intelligence Analytics Brief", "isVirtual": false }
+    }
+  ],
+  "links": { "…": "…" }, "meta": { "…": "…" }
+}
+```
+
+**Wiring "read the full paper".** The `product` key is the `publicId` of the document the abstract
+was lifted from — **not** an id of the abstract, which has no identity of its own. Open it with
+`GET /products/{product}` exactly as from any other listing: that endpoint applies the caller's tier
+and returns the full body, the redacted body, or the locked preview as their entitlement allows.
+`component` tells you which product line it came from, which matters here because this listing mixes
+all of them.
+
+**No body is ever returned here.** `abstract` is the only prose in the payload. The listing is
+public, so a visitor sees the same abstracts a subscriber does — abstracts have always been the
+public preview (FR-09), which is also why no tier allocates against `AP`.
 
 ---
 
@@ -830,6 +902,12 @@ Full subscription detail (tier + allocations) for the "active subscription" area
 
 **Response (`200`):** a `SubscriptionResource` (with nested `tier.allocations`). **Errors:** `403 subscription_not_active` if the account has no subscription at all.
 
+**`pendingTier` / `pendingTierEffectiveAt`** — a downgrade the subscriber has scheduled, and the
+date it lands (always the current `endsAt`). Both are `null` on an ordinary subscription, which is
+the usual case; they are present on **every** subscription object, so a missing key means an old
+build, not "no change scheduled". Show it as a banner: the tier in `tier` is the one in force until
+`pendingTierEffectiveAt`.
+
 ---
 
 ### POST `/me/subscription/renew`
@@ -871,7 +949,56 @@ Poll `GET /payments/{payment}/status`; on success the subscription switches to t
 - `422 tier_not_purchasable` — target tier is inactive.
 - `422` validation — unknown `tier`.
 
-> **Note:** upgrade always charges the full new-tier price (no proration). Downgrades are not supported by this endpoint.
+> **Note:** upgrade always charges the full new-tier price (no proration). For a **lower**-priced tier use [`POST /me/subscription/downgrade`](#post-mesubscriptiondowngrade), which schedules the change for the end of the paid term instead of charging now.
+
+---
+
+### POST `/me/subscription/downgrade`
+Move to a **cheaper tier at the end of the current term**. Nothing is charged and **nothing changes
+today**: the access already paid for runs to `endsAt`, and the new tier starts from the next billing.
+
+**Body:** `tier` (required, target tier `publicId`). No `payment_method` — there is nothing to pay
+now.
+
+**Response (`200`):** the subscription, unchanged except for its new `pendingTier`.
+```json
+{
+  "message": "Downgrade to Freemium scheduled for 3 November 2026.",
+  "data": { "subscription": {
+    "publicId": "…", "status": "active", "endsAt": "2026-11-03 09:00:00",
+    "tier": { "name": "Premium", "price": "49.99" },
+    "pendingTier": { "name": "Freemium", "price": "0.00" },
+    "pendingTierEffectiveAt": "2026-11-03 09:00:00"
+  } }
+}
+```
+
+**Cancelling.** Sending the subscriber's **current** tier cancels a scheduled downgrade and returns
+`200` with `pendingTier: null` — so one tier picker covers scheduling and cancelling. `DELETE
+/me/subscription/downgrade` does the same thing explicitly, and succeeds whether or not one was
+scheduled.
+
+**What happens when the term ends:**
+
+| Target tier | What happens |
+|---|---|
+| **Free** (Freemium) | The term rolls onto it automatically — `subscriptions:expire` applies it, the account stays `active` with a fresh month, and no "subscription ended" email is sent. This is how a subscriber steps off a paid plan without closing the account. |
+| **Paid** (a cheaper paid tier) | It still has to be paid for, so `POST /me/subscription/renew` is priced against the **pending** tier, not the current one, and lands on it when the payment clears. If the subscriber lets the term lapse instead, the subscription expires as normal and the schedule survives for whenever they renew. |
+
+An **upgrade that is paid for cancels a scheduled downgrade** — paying to move up overtakes the
+move down.
+
+**Errors:**
+- `422 invalid_tier_change` — target is a higher- or equal-priced tier (use upgrade), or is the current tier with nothing scheduled.
+- `422 tier_not_purchasable` — target tier is inactive.
+- `403 subscription_not_active` — the subscription never started or has already ended; there is no term to schedule against.
+- `422` validation — unknown `tier`.
+
+---
+
+### DELETE `/me/subscription/downgrade`
+Call off a scheduled downgrade. **Response (`200`):** the subscription with `pendingTier: null`.
+Succeeds whether or not one was scheduled — the outcome asked for is the outcome either way.
 
 ---
 
@@ -1761,7 +1888,10 @@ should agree with them.
 
 | When | Email | Carries |
 |---|---|---|
-| A payment settles | "Your subscription is active" / "…has been renewed" / "…has been upgraded" | the amount charged, the M-Pesa reference, the date access runs to, and **the invoice as a PDF attachment** |
+| An account is created — **every** subscriber, freemium included | "Welcome to Spectrum Global Analytics" | the tier, what it unlocks component by component, the date the term runs to, and a sign-in link |
+| An account is created on a **paid** tier, before the payment clears | "Your account — one step left" | that the account is **reserved, not open**, the amount outstanding, and a link to `/payment/return/{publicId}`. Deliberately promises no access |
+| A downgrade is scheduled | "Your move to {tier} is scheduled" | that **nothing has changed yet**, the date it lands, and how to call it off |
+| A payment settles | "Your subscription is active" / "…has been renewed" / "…has been upgraded" / "Your new tier has started" (a scheduled downgrade landing) | the amount charged, the M-Pesa reference, the date access runs to, and **the invoice as a PDF attachment** |
 | A payment fails (declined, expired, short) | "Your payment did not go through" | why, and a link to `/payment/return/{publicId}` to try again |
 | 7 days before a term ends | "Your subscription ends in N days" | the end date, and a link to `{portal}/subscription` |
 | The last day | "Your subscription ends tomorrow" | as above; each notice is sent once |
@@ -1769,6 +1899,9 @@ should agree with them.
 
 Because the PDF is attached, the portal does **not** need to offer an invoice download to close the
 loop — though `GET /me/invoices/{invoice}` still carries the same data as JSON.
+
+All of them render in the house email theme — navy `#10172D`, brass `#AA8940`, serif headings — so
+the inbox matches the site rather than Laravel's stock indigo.
 
 ### The `/payment/return/{publicId}` page (subscriber portal)
 PGW's hosted page redirects here after **either** payment method, with the payment's `publicId` as

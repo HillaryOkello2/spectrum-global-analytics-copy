@@ -20,6 +20,10 @@ class ComponentResource extends JsonResource
             'code' => $this->code,
             'batch' => $this->batch,
             'isTransactional' => $this->is_transactional,
+            // True for Abstract Papers: it generates nothing and lists every
+            // other component's abstracts, so its tile opens an abstract
+            // listing rather than a product listing.
+            'isVirtual' => (bool) $this->is_virtual,
             'sortOrder' => $this->sort_order,
             // Present only where the endpoint counted it — never on a component
             // nested inside a product or topic payload.

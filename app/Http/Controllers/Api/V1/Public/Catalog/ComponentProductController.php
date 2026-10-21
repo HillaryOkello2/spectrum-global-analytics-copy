@@ -15,8 +15,16 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
  */
 class ComponentProductController extends Controller
 {
-    public function index(Request $request, Component $component): AnonymousResourceCollection
+    public function index(Request $request, Component $component, AbstractPaperController $abstracts): AnonymousResourceCollection
     {
+        // Abstract Papers has no products of its own: what it holds is every
+        // other component's abstracts. Serving that here as well as at
+        // /catalog/abstracts lets the frontend drill into any tile in the grid
+        // the same way, without knowing which one is the index.
+        if ($component->isVirtual()) {
+            return $abstracts->index($request);
+        }
+
         $products = $component->products()
             ->visible()
             ->with('component')

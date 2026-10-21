@@ -33,8 +33,11 @@ it('returns the component-to-LLM assignment map for admins', function (): void {
         ->sort()
         ->values();
 
-    expect($mappedComponentCodes->count())->toBe(Component::count())
-        ->and($mappedComponentCodes->unique()->count())->toBe(Component::count());
+    // Abstract Papers is not in the map: it runs no model, having nothing to
+    // generate.
+    expect($mappedComponentCodes->count())->toBe(Component::generating()->count())
+        ->and($mappedComponentCodes->unique()->count())->toBe(Component::generating()->count())
+        ->and($mappedComponentCodes)->not->toContain('AP');
 });
 
 it('forbids subscribers from viewing the LLM map', function (): void {
