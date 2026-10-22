@@ -42,16 +42,22 @@ body {
     -premailer-width: 100%;
 }
 
-/* Masthead — the navy band the site opens with. */
+/* Masthead.
+ *
+ * White, like the site's own header bar — the logo is navy and brass on a
+ * transparent ground, so it would disappear against the navy. The navy belongs
+ * below it on the site, and the brass rule along the top of the message does
+ * that job here. */
 
 .header {
-    background-color: #10172d;
-    padding: 28px 0;
+    background-color: #ffffff;
+    border-bottom: 1px solid #e5e1d8;
+    padding: 26px 0;
     text-align: center;
 }
 
 .header a {
-    color: #ffffff;
+    color: #10172d;
     font-family: Georgia, Cambria, "Times New Roman", Times, serif;
     font-size: 22px;
     font-weight: 400;

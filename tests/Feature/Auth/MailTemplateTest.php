@@ -45,9 +45,11 @@ it('signs every email with the product name rather than the framework\'s', funct
     // footer all said so.
     expect(config('app.name'))->not->toBe('Laravel');
 
+    // The tagline is not asserted here: with the logo deployed it is part of
+    // the image rather than text, and the fallback that does render it as text
+    // is covered in BrandLogoTest.
     expect(renderedMail())
         ->toContain(config('app.name'))
-        ->toContain(config('mail.brand.tagline'))
         ->not->toContain('>Laravel<');
 });
 

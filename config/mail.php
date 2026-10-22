@@ -147,7 +147,27 @@ return [
 
     'brand' => [
 
-        'tagline' => env('MAIL_BRAND_TAGLINE', 'Strategic Intelligence'),
+        'tagline' => env('MAIL_BRAND_TAGLINE', 'The Epitome of Human Knowledge'),
+
+        /*
+         * The logo, relative to public/ (or an absolute path). Used by the
+         * email masthead and embedded into the invoice PDF. Blank it, or
+         * remove the file, and both fall back to the text wordmark.
+         */
+        'logo_path' => env('MAIL_BRAND_LOGO_PATH', 'images/spectrum-logo.png'),
+
+        /*
+         * Where email should fetch that logo from. Defaults to APP_URL plus
+         * the path above. Set it explicitly to serve from a CDN or from the
+         * frontend's own domain — worth doing, since some mail clients treat
+         * an image on an unfamiliar host with more suspicion than one on the
+         * domain the mail claims to come from.
+         */
+        'logo_url' => env('MAIL_BRAND_LOGO_URL'),
+
+        // Display width in the email masthead, in CSS pixels. The file itself
+        // is wider, so it stays sharp on high-density screens.
+        'logo_width' => (int) env('MAIL_BRAND_LOGO_WIDTH', 210),
 
         'url' => env('MAIL_BRAND_URL'),
 

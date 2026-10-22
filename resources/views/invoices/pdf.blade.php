@@ -2,6 +2,10 @@
     $payment = $invoice->payment;
     $payer = $payment?->user;
     $money = fn ($currency, $amount) => $currency.' '.number_format((float) $amount, 2);
+    // Inline bytes, not a URL: InvoicePdf turns Dompdf's remote fetching off on
+    // purpose, so a linked image would render as a blank box. Null when the
+    // file is absent, and the text masthead stands in.
+    $logo = app(App\Services\Access\BrandAssets::class)->logoDataUri();
 @endphp
 <!doctype html>
 <html lang="en">
@@ -9,9 +13,12 @@
     <meta charset="utf-8">
     <style>
         body { font-family: "DejaVu Sans", sans-serif; font-size: 11px; color: #1a1a1a; }
-        .masthead { border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 24px; }
-        .masthead h1 { font-size: 16px; margin: 0 0 4px; letter-spacing: 0.08em; }
+        .masthead { border-bottom: 2px solid #10172d; padding-bottom: 12px; margin-bottom: 24px; }
+        .masthead h1 { font-size: 16px; margin: 0 0 4px; letter-spacing: 0.08em; color: #10172d; }
         .masthead p { margin: 0; font-size: 10px; color: #555; }
+        /* The logo carries its own tagline, so the firm's cover tagline below
+           it needs a little air or the two read as one block. */
+        .masthead img { height: 52px; margin-bottom: 6px; }
         .meta { width: 100%; margin-bottom: 24px; }
         .meta td { vertical-align: top; padding: 0 0 4px; }
         .label { color: #555; width: 120px; }
@@ -26,7 +33,11 @@
 </head>
 <body>
     <div class="masthead">
-        <h1>{{ config('app.name') }}</h1>
+        @if ($logo)
+            <img src="{{ $logo }}" alt="{{ config('app.name') }}">
+        @else
+            <h1>{{ config('app.name') }}</h1>
+        @endif
         <p>A New Security Architecture for a Fractured World</p>
     </div>
 

@@ -49,10 +49,16 @@ return [
     | `up` is the framework health check — Plesk and uptime monitors hit it, and
     | it returns no application data. Drop it from this list if nothing external
     | needs it.
+    |
+    | `images/*` is the brand logo the emails point at. A mail client fetches it
+    | as an anonymous request long after the mail was sent, so it has to stay
+    | reachable with the lockdown on or every email masthead becomes a broken
+    | image. It serves static files only — no application data — and is the one
+    | path here that the public is *meant* to reach.
     */
     'allowed_paths' => array_values(array_filter(array_map(
         'trim',
-        explode(',', (string) env('API_ONLY_ALLOWED_PATHS', 'api/*,up'))
+        explode(',', (string) env('API_ONLY_ALLOWED_PATHS', 'api/*,up,images/*'))
     ))),
 
 ];
