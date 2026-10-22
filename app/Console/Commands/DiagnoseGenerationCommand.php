@@ -63,6 +63,7 @@ class DiagnoseGenerationCommand extends Command
         $this->components->info("Generation tasks queued since {$since->toDateTimeString()}");
 
         $this->statusBreakdown($since);
+        $this->failureBreakdown($since);
         $this->qaVerdicts($since);
         $this->stalledTasks();
         $this->queueDepth();
@@ -167,6 +168,85 @@ class DiagnoseGenerationCommand extends Command
             TaskStatus::Generating->value, TaskStatus::Queued->value => 'NO — not written yet',
             TaskStatus::Failed->value => 'NO — the job errored; see last_error',
             default => 'past proofreading',
+        };
+    }
+
+    /**
+     * Why the failed tasks failed, grouped by cause.
+     *
+     * The distinction that matters before retrying anything: a 401 or a 402 is
+     * the environment, and every retry fails again the moment it is sent. A 503
+     * or a timeout is the weather, and a retry is exactly right. Anything else
+     * is a bug, and retrying it just reproduces it.
+     */
+    private function failureBreakdown(\DateTimeInterface $since): void
+    {
+        $failed = GenerationTask::query()
+            ->where('status', TaskStatus::Failed)
+            ->where('queued_at', '>=', $since)
+            ->whereNotNull('last_error')
+            ->get(['id', 'last_error']);
+
+        if ($failed->isEmpty()) {
+            return;
+        }
+
+        $grouped = $failed->groupBy(fn (GenerationTask $task) => $this->classify($task->last_error));
+
+        $this->components->info('Why those tasks failed');
+
+        $this->table(
+            ['Cause', 'Tasks', 'Retrying helps?'],
+            $grouped->map(fn ($tasks, string $cause) => [
+                $cause,
+                $tasks->count(),
+                $this->retryAdvice($cause),
+            ])->values()->all(),
+        );
+
+        // One full error per cause. The truncated column in the retry listing
+        // is enough to group by and not enough to diagnose by.
+        foreach ($grouped as $cause => $tasks) {
+            $this->line("  <options=bold>{$cause}</> — task {$tasks->first()->id}:");
+            $this->line('    '.str_replace("\n", "\n    ", trim(mb_substr((string) $tasks->first()->last_error, 0, 600))));
+            $this->newLine();
+        }
+    }
+
+    /**
+     * Sort an error string into something that implies an action. Matched on
+     * the status code and SQLSTATE the drivers actually put in the message.
+     */
+    private function classify(?string $error): string
+    {
+        $error = (string) $error;
+
+        return match (true) {
+            str_contains($error, 'status code 401') => 'provider rejected the key (401)',
+            str_contains($error, 'status code 402') => 'provider out of credit (402)',
+            str_contains($error, 'status code 403') => 'provider forbade the request (403)',
+            str_contains($error, 'status code 429') => 'provider rate limit (429)',
+            (bool) preg_match('/status code 5\d\d/', $error) => 'provider unavailable (5xx)',
+            str_contains($error, 'has timed out') => 'job timed out',
+            str_contains($error, 'SQLSTATE[42S22]') => 'missing column — schema drift',
+            str_contains($error, 'SQLSTATE[23000]') => 'database constraint violated',
+            str_contains($error, 'SQLSTATE') => 'other database error',
+            default => 'other',
+        };
+    }
+
+    private function retryAdvice(string $cause): string
+    {
+        return match ($cause) {
+            'provider rejected the key (401)' => 'NO — fix the API key first, or it fails again at once',
+            'provider out of credit (402)' => 'NO — top up that provider first',
+            'provider forbade the request (403)' => 'NO — check the key\'s permissions/model access',
+            'provider rate limit (429)' => 'yes, but spread out',
+            'provider unavailable (5xx)' => 'YES — transient on the provider\'s side',
+            'job timed out' => 'yes, if LLM_TIMEOUT and the job timeout allow enough room',
+            'missing column — schema drift' => 'YES — once the repair migration has run',
+            'database constraint violated' => 'NO — a bug; retrying reproduces it',
+            default => 'investigate first',
         };
     }
 

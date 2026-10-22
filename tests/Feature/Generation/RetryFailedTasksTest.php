@@ -181,3 +181,36 @@ it('limits the retry to one component when asked', function (): void {
     expect($dailyTask->refresh()->status)->toBe(TaskStatus::QaRunning)
         ->and($weeklyTask->refresh()->status)->toBe(TaskStatus::Failed);
 });
+
+it('splits a batch by failure cause, so dead credentials are left alone', function (): void {
+    Queue::fake();
+
+    $transient = failedTask(component: Component::factory()->create(['code' => 'WH']));
+    $transient->update(['last_error' => 'HTTP request returned status code 503: {"type":"overloaded"}']);
+
+    $unauthorised = failedTask(component: Component::factory()->create(['code' => 'DB']));
+    $unauthorised->update(['last_error' => 'HTTP request returned status code 401: {"type":"authentication_error"}']);
+
+    $editor = retryActor();
+
+    // Retrying a 401 fails again the moment it is sent, so a batch has to be
+    // splittable along that line.
+    $this->artisan('generation:retry-failed', [
+        '--actor' => $editor->email,
+        '--reason' => 'Provider was overloaded; retrying only the transient failures.',
+        '--matching' => '503',
+    ])->expectsConfirmation('Requeue 1 task(s)?', 'yes')
+        ->assertSuccessful();
+
+    expect($transient->refresh()->status)->toBe(TaskStatus::QaRunning)
+        ->and($unauthorised->refresh()->status)->toBe(TaskStatus::Failed);
+
+    // And the same split stated the other way round.
+    $this->artisan('generation:retry-failed', [
+        '--actor' => $editor->email,
+        '--reason' => 'Retrying everything except the authentication failures.',
+        '--excluding' => '401',
+        '--dry-run' => true,
+    ])->doesntExpectOutputToContain((string) $unauthorised->id)
+        ->assertSuccessful();
+});

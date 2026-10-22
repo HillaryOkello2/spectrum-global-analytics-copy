@@ -30,6 +30,8 @@ class RetryFailedTasksCommand extends Command
         {--actor= : Email of the staff member ordering this; recorded on every audit entry}
         {--reason= : Why these are being retried; recorded on every audit entry}
         {--component= : Limit to one component code, e.g. DB}
+        {--matching= : Limit to tasks whose last error contains this, e.g. "503" or "timed out"}
+        {--excluding= : Skip tasks whose last error contains this, e.g. "401"}
         {--hours= : Limit to tasks queued in the last N hours}
         {--dry-run : List what would be retried, and from which stage, changing nothing}';
 
@@ -127,6 +129,15 @@ class RetryFailedTasksCommand extends Command
             ->when($this->option('component'), fn ($query, string $code) => $query->whereHas(
                 'topic.component',
                 fn ($component) => $component->where('code', $code),
+            ))
+            // Retrying is only ever right for some causes. A 401 fails again
+            // the instant it is sent; a 503 is worth another go. These let a
+            // batch be split along that line without editing rows by hand.
+            ->when($this->option('matching'), fn ($query, string $needle) => $query->where(
+                'last_error', 'like', '%'.$needle.'%',
+            ))
+            ->when($this->option('excluding'), fn ($query, string $needle) => $query->where(
+                fn ($q) => $q->where('last_error', 'not like', '%'.$needle.'%')->orWhereNull('last_error'),
             ))
             ->when($this->option('hours'), fn ($query, string $hours) => $query->where(
                 'queued_at', '>=', now()->subHours((int) $hours),
