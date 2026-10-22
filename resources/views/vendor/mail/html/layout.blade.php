@@ -16,6 +16,10 @@
 width: 100% !important;
 }
 
+.header {
+width: 100% !important;
+}
+
 .footer {
 width: 100% !important;
 }

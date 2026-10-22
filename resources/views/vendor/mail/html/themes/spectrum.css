@@ -50,9 +50,21 @@ body {
  * that job here. */
 
 .header {
+    margin: 0 auto;
+    padding: 0;
+    width: 570px;
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 570px;
+}
+
+/* The white card the logo sits on. No bottom border: the message below
+   carries the brass rule, and the two join into a single card. */
+.header-cell {
     background-color: #ffffff;
-    border-bottom: 1px solid #e5e1d8;
-    padding: 26px 0;
+    border: 1px solid #e5e1d8;
+    border-bottom: 0;
+    padding: 26px 0 22px;
     text-align: center;
 }
 
@@ -80,8 +92,8 @@ body {
 
 .body {
     background-color: #f4f2ed;
-    border-bottom: 1px solid #f4f2ed;
-    border-top: 1px solid #f4f2ed;
+    border-bottom: 0;
+    border-top: 0;
     margin: 0;
     padding: 0;
     width: 100%;
