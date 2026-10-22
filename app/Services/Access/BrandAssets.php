@@ -62,6 +62,38 @@ class BrandAssets
     }
 
     /**
+     * The width the email masthead renders the logo at.
+     */
+    public function logoWidth(): int
+    {
+        return max(1, (int) config('mail.brand.logo_width', 210));
+    }
+
+    /**
+     * The matching height, worked out from the file's own proportions.
+     *
+     * Declared in the markup alongside the width because a mail client that
+     * will not load the image reserves space from those two attributes. With
+     * only a width it reserves a large empty square and drops the alt text
+     * somewhere inside it; with both, it reserves exactly the strip the logo
+     * occupies and the alt text reads as the wordmark.
+     *
+     * Falls back to the aspect ratio of the logo as supplied if the file
+     * cannot be measured.
+     */
+    public function logoHeight(): int
+    {
+        $path = $this->logoPath();
+        $size = $path === null ? false : @getimagesize($path);
+
+        $ratio = $size && ! empty($size[0])
+            ? $size[1] / $size[0]
+            : 235 / 918;
+
+        return max(1, (int) round($this->logoWidth() * $ratio));
+    }
+
+    /**
      * The logo as a `data:` URI, for the invoice PDF.
      *
      * Dompdf is configured with remote fetching disabled (see InvoicePdf, which
