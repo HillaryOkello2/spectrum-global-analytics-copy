@@ -326,6 +326,52 @@ class GenerationPipeline
     }
 
     /**
+     * Put a document the gate is holding back on the board, unassigned.
+     *
+     * Distinct from overrideQaFailure(), and deliberately so. An override is
+     * one person reading one audit, disagreeing with it, and taking that
+     * document on — so it lands in their hands as `in_proofreading` with their
+     * name on it. This is the administrative counterpart: the gate held a batch
+     * it should not have, so the batch goes back to `awaiting_proofreading` as
+     * though it had never been held, for whoever picks it up next.
+     *
+     * The verdict and the audit report are left on the task on purpose. The
+     * document is being released, not absolved, and the proofreader should see
+     * what the auditor objected to.
+     */
+    public function releaseQaFailure(GenerationTask $task, User $actor, string $reason): void
+    {
+        if ($task->status !== TaskStatus::QaFailed) {
+            throw new InvalidTaskTransitionException($task->status, TaskStatus::AwaitingProofreading);
+        }
+
+        DB::transaction(function () use ($task, $actor, $reason): void {
+            // Written directly rather than through transition(): `qa_failed`
+            // has no legal transition, by design — see TaskStatus. The guard
+            // above is the one that matters.
+            $task->update([
+                'status' => TaskStatus::AwaitingProofreading,
+                // failQa() stamped this when it gave up on the document; the
+                // task is live again, so it is no longer completed.
+                'completed_at' => null,
+                'last_error' => null,
+            ]);
+
+            $task->product->update(['status' => ProductStatus::AwaitingProofreading]);
+
+            Audit::of($task)->by($actor)
+                ->change('status', TaskStatus::QaFailed, TaskStatus::AwaitingProofreading)
+                ->with([
+                    'reason' => $reason,
+                    'qaVerdict' => $task->qa_verdict?->value,
+                    'qaRound' => $task->qa_round,
+                    'product' => $task->product?->code,
+                ])
+                ->log('QA hold released; document returned to the proofreading board');
+        });
+    }
+
+    /**
      * Proofreader opens the task — capture identity + timestamp (FR-45).
      */
     public function openProofreading(GenerationTask $task, User $proofreader): void
@@ -491,6 +537,54 @@ class GenerationPipeline
             ->change('status', $previousStatus, TaskStatus::Rejected)
             ->with(['note' => $note, 'product' => $task->product?->code])
             ->log('product rejected');
+    }
+
+    /**
+     * Put a failed task back into the pipeline at the stage it actually
+     * reached, rather than starting it over.
+     *
+     * The distinction is money. A task that died during its QA audit has a
+     * finished document already written and paid for; restarting it would
+     * re-run generation and throw that away. A task that died before the
+     * document existed has nothing to resume, so it goes back to the start.
+     *
+     * Returns the status it was put into, so the caller can say which happened.
+     */
+    public function retryFailed(GenerationTask $task, User $actor, string $reason): TaskStatus
+    {
+        if ($task->status !== TaskStatus::Failed) {
+            throw new InvalidTaskTransitionException($task->status, TaskStatus::Queued);
+        }
+
+        // A body is the evidence that generation finished. Without one there is
+        // nothing to audit, whatever the task got as far as recording.
+        $resumable = $task->product !== null && filled($task->product->body);
+        $target = $resumable ? TaskStatus::QaRunning : TaskStatus::Queued;
+
+        DB::transaction(function () use ($task, $actor, $reason, $target, $resumable): void {
+            // Written directly: `failed` is terminal by design — see
+            // TaskStatus. The guard above is the one that matters.
+            $task->update([
+                'status' => $target,
+                'last_error' => null,
+                'completed_at' => null,
+            ]);
+
+            // Draft either way: it is back in the pipeline and has no business
+            // anywhere a human picks work up from until it passes the audit.
+            $task->product?->update(['status' => ProductStatus::Draft]);
+
+            Audit::of($task)->by($actor)
+                ->change('status', TaskStatus::Failed, $target)
+                ->with([
+                    'reason' => $reason,
+                    'resumedAt' => $resumable ? 'qa' : 'generation',
+                    'product' => $task->product?->code,
+                ])
+                ->log('failed task requeued at the '.($resumable ? 'audit' : 'generation').' stage');
+        });
+
+        return $target;
     }
 
     public function fail(GenerationTask $task, string $error): void

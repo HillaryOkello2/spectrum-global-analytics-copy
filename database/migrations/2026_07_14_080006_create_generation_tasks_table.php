@@ -20,11 +20,11 @@ return new class extends Migration
             // The latest QA audit report, verbatim. Every round of it — and
             // what was wrong with each — is in qa_reviews.
             $table->text('qa_result')->nullable();
-            // Parsed from that report: green | red | unknown. This is what
-            // decides whether the document reaches the vault.
-            $table->string('qa_verdict', 16)->nullable();
-            // 0 while the first draft is being audited, then 1 per rewrite.
-            $table->unsignedTinyInteger('qa_round')->default(0);
+            // `qa_verdict` and `qa_round` belong with this table, but they are
+            // added by 2026_10_20_000003 rather than written here: this
+            // migration had already run everywhere by the time the QA gate was
+            // built, so editing it would have changed nothing but a fresh
+            // install. See that migration.
             $table->foreignId('proofreader_id')->nullable()->constrained('users');
             $table->timestamp('proofread_at')->nullable();
             // Redaction is a second, separate review pass after proofreading.

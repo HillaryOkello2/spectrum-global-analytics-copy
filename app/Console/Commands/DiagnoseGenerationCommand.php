@@ -6,6 +6,7 @@ use App\Enums\TaskStatus;
 use App\Models\GenerationTask;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Answers "the models ran, so where are the products?" from the data.
@@ -28,9 +29,36 @@ class DiagnoseGenerationCommand extends Command
 
     protected $description = 'Explain where generated documents are, and why they are not on the proofreading board';
 
+    /**
+     * Columns added after their table's own migration had already run, which
+     * are therefore the ones a database can be missing while `migrate` reports
+     * nothing to do.
+     *
+     * Kept as a constant so a test can assert it against a freshly migrated
+     * schema — a drift check that names a column which does not exist would
+     * cry wolf during exactly the incident it exists for.
+     *
+     * @var array<string, array<int, string>>
+     */
+    public const REQUIRED_COLUMNS = [
+        'generation_tasks' => ['qa_result', 'qa_verdict', 'qa_round', 'last_error', 'attempts'],
+        'qa_reviews' => ['round', 'verdict', 'report', 'failed_sections', 'rerun_instructions'],
+        'llm_call_logs' => ['context', 'success', 'latency_ms', 'is_probe'],
+        'components' => ['qa_prompt_template', 'queue_name', 'is_virtual'],
+        'products' => ['abstract', 'redacted_body', 'redaction_approved'],
+        'subscriptions' => ['pending_tier_id', 'last_reminder_days'],
+    ];
+
     public function handle(): int
     {
         $since = now()->subHours((int) $this->option('hours'));
+
+        // Before anything else: if the code is running against a table that
+        // does not have the columns it writes, nothing below will make sense
+        // and half of it will throw.
+        if ($this->schemaDrift()) {
+            return self::FAILURE;
+        }
 
         $this->components->info("Generation tasks queued since {$since->toDateTimeString()}");
 
@@ -41,6 +69,60 @@ class DiagnoseGenerationCommand extends Command
         $this->settings();
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Columns this application's code writes, checked against the columns the
+     * database actually has.
+     *
+     * This is the failure that does not announce itself: the deploy succeeds,
+     * `migrate` reports nothing to do, the models run and are paid, and every
+     * job dies on an SQL error at the moment it tries to record the result. It
+     * happens when a column is added by editing a migration that has already
+     * run — the file's name is already in the `migrations` table, so the change
+     * reaches fresh installs and nothing else.
+     *
+     * @return bool true when something is missing, and the caller should stop
+     */
+    private function schemaDrift(): bool
+    {
+        $required = self::REQUIRED_COLUMNS;
+
+        $missing = [];
+
+        foreach ($required as $table => $columns) {
+            if (! Schema::hasTable($table)) {
+                $missing[] = [$table, '(whole table)', 'the migration that creates it has not run'];
+
+                continue;
+            }
+
+            foreach ($columns as $column) {
+                if (! Schema::hasColumn($table, $column)) {
+                    $missing[] = [$table, $column, 'code writes this; the database has no such column'];
+                }
+            }
+        }
+
+        if ($missing === []) {
+            return false;
+        }
+
+        $this->components->error('Schema drift: the code is ahead of the database.');
+
+        $this->table(['Table', 'Missing', 'Meaning'], $missing);
+
+        $this->line('  Every job that writes one of these dies on an SQL error — after the model has');
+        $this->line('  already been called and paid for. Tasks end up `failed`, never reaching the board.');
+        $this->newLine();
+        $this->line('  `php artisan migrate` reporting "Nothing to migrate" does NOT rule this out: a');
+        $this->line('  column added by editing an already-run migration leaves that file\'s name in the');
+        $this->line('  `migrations` table, so there is nothing for migrate to pick up.');
+        $this->newLine();
+        $this->line('  Fix: deploy the repair migration that adds these, run `php artisan migrate`, then');
+        $this->line('  `php artisan generation:retry-failed --dry-run` to see what can be resumed.');
+
+        return true;
     }
 
     /**
