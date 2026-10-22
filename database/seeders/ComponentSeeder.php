@@ -210,9 +210,22 @@ class ComponentSeeder extends Seeder
             ]);
         }
 
-        // No prompts, no provider and no queue: nothing is ever generated for
-        // it. Given the sort order after the nine, so it closes the catalogue.
-        Component::updateOrCreate(
+        self::seedAbstractPapers();
+    }
+
+    /**
+     * Create (or re-assert) the Abstract Papers row.
+     *
+     * Separate and public because the migration that introduces this component
+     * on an already-populated database calls it too — one definition, whether
+     * the catalogue is being seeded from nothing or added to in place.
+     *
+     * No prompts, no provider and no queue: nothing is ever generated for it.
+     * Sorted after the nine, so it closes the catalogue.
+     */
+    public static function seedAbstractPapers(): Component
+    {
+        return Component::updateOrCreate(
             ['code' => self::ABSTRACT_PAPERS['code']],
             [
                 ...self::ABSTRACT_PAPERS,

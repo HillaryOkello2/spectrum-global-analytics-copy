@@ -13,11 +13,11 @@ use App\Models\User;
  */
 function abstractPapers(): Component
 {
-    return Component::factory()->virtual()->create([
-        'code' => 'AP',
-        'name' => 'Abstract Papers',
-        'sort_order' => 99,
-    ]);
+    // Not built here: the data migration that introduces this component has
+    // already created it, in the test database exactly as in production. Using
+    // that row means these tests exercise the component the application
+    // actually ships rather than a stand-in that resembles it.
+    return Component::where('code', 'AP')->firstOrFail();
 }
 
 it('lists the abstracts of every published product, whichever component wrote it', function (): void {

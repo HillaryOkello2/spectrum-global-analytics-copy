@@ -8,9 +8,12 @@ use App\Models\User;
 it('lists components for the public catalogue', function (): void {
     Component::factory()->count(3)->create();
 
+    // Four, not three: Abstract Papers is part of every catalogue, put there by
+    // its own data migration rather than by this test.
     $this->getJson(route('api.catalog.components.index'))
         ->assertOk()
-        ->assertJsonCount(3, 'data');
+        ->assertJsonCount(4, 'data')
+        ->assertJsonFragment(['code' => 'AP', 'isVirtual' => true]);
 });
 
 it('resolves a component by public id or by its unique code', function (): void {
