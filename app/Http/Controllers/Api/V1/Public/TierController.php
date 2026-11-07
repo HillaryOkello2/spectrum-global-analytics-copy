@@ -18,6 +18,7 @@ class TierController extends Controller
     {
         $tiers = SubscriptionTier::query()
             ->active()
+            ->priced()
             ->with('allocations.component')
             ->orderBy('sort_order')
             ->get();

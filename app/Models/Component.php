@@ -25,6 +25,7 @@ class Component extends Model
         'is_transactional',
         'is_virtual',
         'sort_order',
+        'color',
         'prompt_template',
         'topic_prompt',
         'qa_prompt_template',

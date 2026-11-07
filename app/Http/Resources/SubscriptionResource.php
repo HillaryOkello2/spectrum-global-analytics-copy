@@ -30,6 +30,15 @@ class SubscriptionResource extends JsonResource
             'pendingTierEffectiveAt' => $this->pending_tier_id === null
                 ? null
                 : $this->ends_at?->format('Y-m-d H:i:s'),
+
+            // Set when a paid term lapsed onto Freemium (or a scheduled free
+            // downgrade applied). Null once the subscriber upgrades again.
+            'downgradedFrom' => $this->downgraded_from_tier_name === null
+                ? null
+                : [
+                    'tierName' => $this->downgraded_from_tier_name,
+                    'endedAt' => $this->downgraded_from_ended_at?->format('Y-m-d H:i:s'),
+                ],
         ];
     }
 }

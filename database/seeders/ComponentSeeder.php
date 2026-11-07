@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Component;
 use App\Models\LlmProvider;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Schema;
 
 class ComponentSeeder extends Seeder
 {
@@ -173,6 +174,23 @@ class ComponentSeeder extends Seeder
         'HM' => 'moonshot',
     ];
 
+    /**
+     * Frontend palette keys — fixed per code so a new component never reshuffles
+     * existing colours. Keys component-1 … component-12 are defined in the portal.
+     */
+    public const COLOURS = [
+        'DB' => 'component-1',
+        'WH' => 'component-2',
+        'MF' => 'component-3',
+        'CC' => 'component-4',
+        'ES' => 'component-5',
+        'BS' => 'component-6',
+        'RP' => 'component-7',
+        'WP' => 'component-8',
+        'HM' => 'component-9',
+        'AP' => 'component-10',
+    ];
+
     public function run(): void
     {
         $providerIds = LlmProvider::pluck('id', 'driver')->all();
@@ -198,7 +216,7 @@ class ComponentSeeder extends Seeder
         // The Daily Brief is audited against QC-DB.txt instead — see
         // qaPromptFor().
         foreach (self::COMPONENTS as $index => $component) {
-            Component::updateOrCreate(['code' => $component['code']], [
+            $attrs = [
                 ...$component,
                 'prompt_template' => self::productPrompt($component),
                 'topic_prompt' => self::topicPrompt($component),
@@ -207,7 +225,15 @@ class ComponentSeeder extends Seeder
                 'is_transactional' => false,
                 'queue_name' => 'llm-'.strtolower($component['code']),
                 'sort_order' => $index + 1,
-            ]);
+            ];
+
+            // Color landed in a later migration; the Abstract Papers data
+            // migration can call seedAbstractPapers before that column exists.
+            if (Schema::hasColumn('components', 'color')) {
+                $attrs['color'] = self::COLOURS[$component['code']] ?? null;
+            }
+
+            Component::updateOrCreate(['code' => $component['code']], $attrs);
         }
 
         self::seedAbstractPapers();
@@ -225,18 +251,24 @@ class ComponentSeeder extends Seeder
      */
     public static function seedAbstractPapers(): Component
     {
+        $attrs = [
+            ...self::ABSTRACT_PAPERS,
+            'prompt_template' => null,
+            'topic_prompt' => null,
+            'qa_prompt_template' => null,
+            'assigned_llm_provider_id' => null,
+            'is_transactional' => false,
+            'queue_name' => 'llm',
+            'sort_order' => count(self::COMPONENTS) + 1,
+        ];
+
+        if (Schema::hasColumn('components', 'color')) {
+            $attrs['color'] = self::COLOURS[self::ABSTRACT_PAPERS['code']] ?? null;
+        }
+
         return Component::updateOrCreate(
             ['code' => self::ABSTRACT_PAPERS['code']],
-            [
-                ...self::ABSTRACT_PAPERS,
-                'prompt_template' => null,
-                'topic_prompt' => null,
-                'qa_prompt_template' => null,
-                'assigned_llm_provider_id' => null,
-                'is_transactional' => false,
-                'queue_name' => 'llm',
-                'sort_order' => count(self::COMPONENTS) + 1,
-            ],
+            $attrs,
         );
     }
 

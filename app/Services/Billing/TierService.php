@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Exceptions\Domain\DefaultFreeTierPriceLockedException;
 use App\Models\Component;
 use App\Models\SubscriptionTier;
 use App\Models\User;
@@ -94,7 +95,23 @@ class TierService
     public function update(SubscriptionTier $tier, array $attributes, User $actor): SubscriptionTier
     {
         return DB::transaction(function () use ($tier, $attributes, $actor) {
+            $this->assertDefaultFreeRules($tier, $attributes);
+
             $before = $tier->only(array_keys($attributes));
+
+            if (($attributes['featured'] ?? false) === true) {
+                SubscriptionTier::query()
+                    ->where('id', '!=', $tier->id)
+                    ->where('featured', true)
+                    ->update(['featured' => false]);
+            }
+
+            if (($attributes['is_default_free'] ?? false) === true) {
+                SubscriptionTier::query()
+                    ->where('id', '!=', $tier->id)
+                    ->where('is_default_free', true)
+                    ->update(['is_default_free' => false]);
+            }
 
             $tier->update($attributes);
 
@@ -104,5 +121,47 @@ class TierService
 
             return $tier->refresh()->load('allocations.component');
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertDefaultFreeRules(SubscriptionTier $tier, array $attributes): void
+    {
+        $willBeDefaultFree = array_key_exists('is_default_free', $attributes)
+            ? (bool) $attributes['is_default_free']
+            : $tier->is_default_free;
+
+        if (! $willBeDefaultFree && ! $tier->is_default_free) {
+            return;
+        }
+
+        // Still the default free tier after this PATCH (or becoming it).
+        if ($willBeDefaultFree) {
+            $nextPrice = array_key_exists('price', $attributes) ? $attributes['price'] : $tier->price;
+
+            if ($nextPrice === null || (float) $nextPrice !== 0.0) {
+                throw new DefaultFreeTierPriceLockedException;
+            }
+        }
+
+        // Deactivating the default free tier would leave nowhere for signups
+        // and lapsed subscribers to land.
+        if ($tier->is_default_free && ($attributes['is_active'] ?? true) === false) {
+            throw new DefaultFreeTierPriceLockedException(
+                'The default free tier cannot be deactivated.',
+            );
+        }
+
+        // Clearing the flag with no replacement is refused when this is the
+        // only default-free tier — callers must point the flag at another tier.
+        if ($tier->is_default_free
+            && array_key_exists('is_default_free', $attributes)
+            && $attributes['is_default_free'] === false
+        ) {
+            throw new DefaultFreeTierPriceLockedException(
+                'Set is_default_free on another tier before clearing it here.',
+            );
+        }
     }
 }

@@ -19,6 +19,10 @@ class SubscriptionTierFactory extends Factory
             'billing_period' => 'monthly',
             'is_active' => true,
             'sort_order' => 0,
+            'featured' => false,
+            'description' => null,
+            'benefits' => [],
+            'is_default_free' => false,
         ];
     }
 
@@ -26,6 +30,23 @@ class SubscriptionTierFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'price' => 0,
+        ]);
+    }
+
+    public function defaultFree(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'price' => 0,
+            'is_default_free' => true,
+            'name' => $attributes['name'] ?? 'Freemium',
+        ]);
+    }
+
+    public function unpriced(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'price' => null,
+            'currency' => null,
         ]);
     }
 }

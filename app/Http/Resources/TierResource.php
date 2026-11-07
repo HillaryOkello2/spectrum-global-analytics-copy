@@ -20,6 +20,10 @@ class TierResource extends JsonResource
             'billingPeriod' => $this->billing_period,
             'isActive' => $this->is_active,
             'sortOrder' => $this->sort_order,
+            'featured' => (bool) $this->featured,
+            'description' => $this->description,
+            'benefits' => $this->benefits ?? [],
+            'isDefaultFree' => (bool) $this->is_default_free,
             // Admin listings count them; the public pricing page does not.
             'subscribersCount' => $this->whenCounted('subscriptions', fn ($count) => (int) $count),
             'allocations' => $this->whenLoaded('allocations', function () {
@@ -43,7 +47,7 @@ class TierResource extends JsonResource
      */
     private function charge(): ?array
     {
-        if ($this->resource->isFree()) {
+        if (! $this->resource->isPriced() || $this->resource->isFree()) {
             return null;
         }
 

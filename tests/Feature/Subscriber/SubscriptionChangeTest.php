@@ -28,16 +28,15 @@ function settleFakePayment(string $gatewayRef): void
 
 it('renews a freemium subscription immediately with no payment', function (): void {
     $tier = SubscriptionTier::factory()->free()->create(['name' => 'Freemium']);
-    $user = subscriberOn($tier, ['ends_at' => now()->addDays(5)]);
+    $user = subscriberOn($tier, ['ends_at' => null]);
 
     $this->actingAs($user)
         ->postJson(route('api.me.subscription.renew'))
         ->assertOk()
         ->assertJsonPath('data.subscription.status', SubscriptionStatus::Active->value);
 
-    // Extended a month from the existing end date (kept the remaining 5 days).
-    expect($user->activeSubscription->ends_at->toDateString())
-        ->toBe(now()->addDays(5)->addMonth()->toDateString())
+    // Freemium stays open-ended — renew is a no-cost confirmation, not a new term.
+    expect($user->activeSubscription->ends_at)->toBeNull()
         ->and($user->payments()->count())->toBe(0);
 });
 

@@ -30,6 +30,31 @@ example success and error responses.
 
 ---
 
+## Added — 2026-11-07 (frontend requirements: tiers, Freemium lapse, colours, article emails)
+
+All additive for the portal. Full shapes below.
+
+| What | Where |
+|---|---|
+| **`featured`**, **`description`**, **`benefits[]`**, **`isDefaultFree`** on every tier | `GET /tiers`, `GET /admin/tiers`, `PATCH /admin/tiers/{tier}` |
+| **`tier_not_priced`** — unpriced tiers are omitted from public `GET /tiers` and refused on register / upgrade / downgrade / renew | `422` with `code: "tier_not_priced"` |
+| **`default_free_tier_price_locked`** — the default free tier must stay at price `0` and cannot be deactivated | `PATCH /admin/tiers/{tier}` → `422` |
+| **Lapse → Freemium** — a paid term that ends with no paid pending target moves onto the default free tier (`status: active`, `endsAt: null`) | `subscriptions:expire`; `GET /me/subscription` carries `downgradedFrom` |
+| **`color`** on every component (design-token key `component-1` … `component-12`) | `GET /catalog/components`; `PATCH /admin/vault/components/{component}` |
+| **New-article emails** + preference API | `GET`/`PATCH /me/notification-preferences`; publish triggers mail; signed unsubscribe URL |
+
+**Defaults / contracts the frontend can rely on:**
+
+- Exactly one tier has `isDefaultFree: true` (seeded Freemium). Identify the free landing tier by this flag, never by name.
+- At most one tier has `featured: true`. Setting `featured: true` on another clears the previous.
+- `billingPeriod` is only `"monthly"`.
+- Upgrade / downgrade compare numeric list `price` in the **same** list currency; keep all active tiers on one currency.
+- Metered `monthlyLimit` = products (articles) per component per **calendar month**.
+- Freemium subscriptions have `endsAt: null` and never lapse into “no access”.
+- `pendingTier` is a full `TierResource` (always includes `publicId` when not null).
+
+---
+
 ## Added — 2026-10-22 (Abstract Papers, downgrades, welcome mail)
 
 All additive — no endpoint changed shape, nothing was removed.
@@ -477,6 +502,8 @@ All errors are JSON. Check the HTTP status first, then `code` for domain errors.
 | `payment_callback_unauthorized` | 401 | (Webhook) callback credentials missing or wrong. | Server-to-server only. |
 | `payment_not_retryable` | 409 | Retry refused: the payment is pending or paid, or a newer attempt exists. | Poll the latest payment instead. |
 | `tier_not_purchasable` | 422 | Selected tier is inactive/unavailable. | Refresh tiers. |
+| `tier_not_priced` | 422 | Selected tier has no published price/currency. | Pick another plan; it will not appear on `GET /tiers`. |
+| `default_free_tier_price_locked` | 422 | Tried to price or deactivate the default free tier. | Keep `isDefaultFree` at price `0` and active. |
 | `role_escalation` | 403 | (Admin) only a System Admin may grant/revoke the System Admin role. | Hide that option for non-System-Admins. |
 | `self_access_change` | 422 | (Admin) you cannot change your own roles/permissions. | Disable the control on your own row. |
 | `last_system_admin` | 422 | (Admin) would remove the only System Admin. | Explain that another must be promoted first. |
@@ -672,17 +699,22 @@ account is revoked, so the user signs in again with the new password.
 No token required. These power the marketing site and gated previews.
 
 ### GET `/catalog/components`
-Lists all 9 Components, in `sortOrder` (DB first). This is the catalogue's entry point.
+Lists all 9 Components plus Abstract Papers, in `sortOrder` (DB first). This is the catalogue's entry point.
 
 **Response (`200`):**
 ```json
 {
   "data": [
-    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "isVirtual": false, "sortOrder": 1, "productsCount": 3, "averageRating": 4.6, "ratingsCount": 28 },
-    { "publicId": "…", "name": "Abstract Papers", "code": "AP", "batch": 3, "isTransactional": false, "isVirtual": true, "sortOrder": 10, "productsCount": 41, "averageRating": 4.4, "ratingsCount": 180 }
+    { "publicId": "…", "name": "Daily Strategic Intelligence Analytics Brief", "code": "DB", "batch": 1, "isTransactional": false, "isVirtual": false, "sortOrder": 1, "color": "component-1", "productsCount": 3, "averageRating": 4.6, "ratingsCount": 28 },
+    { "publicId": "…", "name": "Abstract Papers", "code": "AP", "batch": 3, "isTransactional": false, "isVirtual": true, "sortOrder": 10, "color": "component-10", "productsCount": 41, "averageRating": 4.4, "ratingsCount": 180 }
   ]
 }
 ```
+
+**`color`** — a design-token key from the portal palette (`component-1` … `component-12`), or `null`
+if unset (frontend picks a fallback). Keys are unique across components and do not change when
+another component is added or reordered. Admins set them with
+`PATCH /admin/vault/components/{component}` (`{ "color": "component-11" }`, permission `manage vault`).
 
 **`isVirtual`** — `true` for **Abstract Papers** only. That component writes nothing: it carries the
 abstracts of every *other* component's published work. Its tile drills into an abstract listing
@@ -812,17 +844,31 @@ Render the `abstract`, a lock icon, and a Subscribe button. Neither `body` nor `
 ### GET `/tiers`
 Subscription tier cards for the pricing/subscription page, including per-component allocations.
 
-`price`/`currency` is the list price (USD). `charge` is what the payer will actually be asked for
-when that differs, e.g. `{ "amount": "6449.00", "currency": "KES" }` with PGW, so the page can show
-"≈ KES 6,449" before M-Pesa does. It is `null` for free tiers, when nothing is converted, and when no
-exchange rate is configured yet.
+Only **active and priced** tiers appear here (inactive or unpriced tiers are omitted). Every object
+always carries the fields below.
+
+`price`/`currency` is the list price (whatever currency the admin set — commonly `USD` or `KES`).
+`charge` is what the payer will actually be asked for when that differs, e.g.
+`{ "amount": "6449.00", "currency": "KES" }` with PGW. It is `null` for free tiers, when nothing is
+converted, and when no exchange rate is configured yet.
 
 **Response (`200`):**
 ```json
 {
   "data": [
     {
-      "publicId": "…", "name": "Freemium", "price": "0.00", "currency": "USD", "charge": null, "billingPeriod": "monthly",
+      "publicId": "…",
+      "name": "Freemium",
+      "price": "0.00",
+      "currency": "USD",
+      "charge": null,
+      "billingPeriod": "monthly",
+      "isActive": true,
+      "sortOrder": 1,
+      "featured": false,
+      "description": null,
+      "benefits": [],
+      "isDefaultFree": true,
       "allocations": [
         { "componentCode": "DB", "componentName": "Daily Strategic Intelligence Analytics Brief", "accessType": "metered", "monthlyLimit": 10 },
         { "componentCode": "HM", "componentName": "High Magnitude Crisis Simulation Project", "accessType": "denied", "monthlyLimit": null }
@@ -831,7 +877,15 @@ exchange rate is configured yet.
   ]
 }
 ```
-`accessType` is `unlimited` (no cap), `metered` (`monthlyLimit` reads per month), or `denied` (not included). See the [tier matrix appendix](#13-appendix-subscription-tier-matrix).
+
+- `featured` — at most one `true` (“Most popular” badge).
+- `description` — short marketing copy, or `null`.
+- `benefits` — string array (empty when unset). When non-empty, the portal may render it verbatim.
+- `isDefaultFree` — exactly one tier; new free signups and lapsed paid accounts land here. Keep the
+  price at `0`; the admin API refuses otherwise (`default_free_tier_price_locked`).
+- `billingPeriod` — only `"monthly"` today.
+- `accessType` — `unlimited` (no cap), `metered` (`monthlyLimit` = products per component per
+  **calendar month**), or `denied`. See the [tier matrix appendix](#13-appendix-subscription-tier-matrix).
 
 ---
 
@@ -900,19 +954,71 @@ Staff use this to replace the temporary password they were emailed when an admin
 ### GET `/me/subscription`
 Full subscription detail (tier + allocations) for the "active subscription" area.
 
-**Response (`200`):** a `SubscriptionResource` (with nested `tier.allocations`). **Errors:** `403 subscription_not_active` if the account has no subscription at all.
+**Response (`200`):**
+```json
+{
+  "data": {
+    "publicId": "…",
+    "status": "active",
+    "startsAt": "2026-10-01 00:00:00",
+    "endsAt": "2026-11-01 00:00:00",
+    "tier": {
+      "publicId": "…",
+      "name": "Superior",
+      "price": "99.99",
+      "currency": "USD",
+      "isDefaultFree": false,
+      "allocations": [
+        { "componentCode": "DB", "accessType": "unlimited", "monthlyLimit": null }
+      ]
+    },
+    "pendingTier": null,
+    "pendingTierEffectiveAt": null,
+    "downgradedFrom": null
+  }
+}
+```
+
+Freemium (and any other free tier after a lapse) has `"endsAt": null`.
+
+**Errors:** `403 subscription_not_active` if the account has no subscription at all.
 
 **`pendingTier` / `pendingTierEffectiveAt`** — a downgrade the subscriber has scheduled, and the
-date it lands (always the current `endsAt`). Both are `null` on an ordinary subscription, which is
-the usual case; they are present on **every** subscription object, so a missing key means an old
-build, not "no change scheduled". Show it as a banner: the tier in `tier` is the one in force until
-`pendingTierEffectiveAt`.
+date it lands (always the current `endsAt`). Both are `null` on an ordinary subscription. When set,
+`pendingTier` is a full tier object and **always includes `publicId`** (match it to `GET /tiers`,
+never by name).
+
+**`downgradedFrom`** — `{ "tierName": "Superior", "endedAt": "…" }` after a paid term lapsed onto
+Freemium (or a scheduled free downgrade applied). `null` otherwise. Clear it from the UI once the
+subscriber upgrades again.
+
+---
+
+### GET `/me/notification-preferences` / PATCH `/me/notification-preferences`
+How often the subscriber wants emails when a new article is published.
+
+**GET / PATCH response (`200`):**
+```json
+{ "data": { "newArticles": "daily", "components": null } }
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `newArticles` | `each` \| `daily` \| `none` | One email per article, one digest a day, or off. Default when unset: **`daily`**. |
+| `components` | `string[]` \| `null` | Component codes to include. `null` or omitted = every component their tier can read (not `denied`). |
+
+**PATCH body (all optional):** `{ "newArticles": "each", "components": ["DB", "WH"] }`.
+
+Signed unsubscribe links in the emails hit
+`GET /notification-preferences/unsubscribe/{subscriber}?expires=…&signature=…` (no auth) and set
+`newArticles` to `none`.
 
 ---
 
 ### POST `/me/subscription/renew`
 Renew the current subscription for **another month on the same tier**. A month is added from
 whichever is later — now or the current end date — so renewing early never loses remaining days.
+Freemium renew confirms the open-ended free term (`endsAt` stays `null`).
 
 **Body:** `payment_method` (optional, `mpesa` or `card`; only used for paid tiers). M-Pesa, the
 default, needs a Kenyan mobile on the profile; without one this is `422` on `payment_method`: pay by
@@ -920,7 +1026,7 @@ card or update the phone first.
 
 **Response — Freemium (`200`):** renewed immediately, no payment.
 ```json
-{ "message": "Subscription renewed.", "data": { "subscription": { "publicId": "…", "status": "active", "endsAt": "…", "tier": { "name": "Freemium" } } } }
+{ "message": "Subscription renewed.", "data": { "subscription": { "publicId": "…", "status": "active", "endsAt": null, "tier": { "name": "Freemium", "isDefaultFree": true } } } }
 ```
 
 **Response — paid tier (`202`):** complete payment to finish (same pattern as sign-up).
@@ -945,8 +1051,9 @@ M-Pesa needs a Kenyan mobile on the profile, as for renew).
 Poll `GET /payments/{payment}/status`; on success the subscription switches to the new tier with a fresh month. The tier does **not** change until payment clears.
 
 **Errors:**
-- `422 invalid_tier_change` — target is the same tier (use renew) or a lower/equal-priced tier (not an upgrade).
+- `422 invalid_tier_change` — target is the same tier (use renew) or a lower/equal-priced tier (not an upgrade). Comparison uses numeric list `price` (keep tiers on one list currency).
 - `422 tier_not_purchasable` — target tier is inactive.
+- `422 tier_not_priced` — target (or current) tier has no published price/currency.
 - `422` validation — unknown `tier`.
 
 > **Note:** upgrade always charges the full new-tier price (no proration). For a **lower**-priced tier use [`POST /me/subscription/downgrade`](#post-mesubscriptiondowngrade), which schedules the change for the end of the paid term instead of charging now.
@@ -966,8 +1073,8 @@ now.
   "message": "Downgrade to Freemium scheduled for 3 November 2026.",
   "data": { "subscription": {
     "publicId": "…", "status": "active", "endsAt": "2026-11-03 09:00:00",
-    "tier": { "name": "Premium", "price": "49.99" },
-    "pendingTier": { "name": "Freemium", "price": "0.00" },
+    "tier": { "publicId": "…", "name": "Premium", "price": "49.99" },
+    "pendingTier": { "publicId": "…", "name": "Freemium", "price": "0.00", "isDefaultFree": true },
     "pendingTierEffectiveAt": "2026-11-03 09:00:00"
   } }
 }
@@ -978,12 +1085,13 @@ now.
 /me/subscription/downgrade` does the same thing explicitly, and succeeds whether or not one was
 scheduled.
 
-**What happens when the term ends:**
+**What happens when the term ends (`subscriptions:expire`):**
 
-| Target tier | What happens |
+| Situation | What happens |
 |---|---|
-| **Free** (Freemium) | The term rolls onto it automatically — `subscriptions:expire` applies it, the account stays `active` with a fresh month, and no "subscription ended" email is sent. This is how a subscriber steps off a paid plan without closing the account. |
-| **Paid** (a cheaper paid tier) | It still has to be paid for, so `POST /me/subscription/renew` is priced against the **pending** tier, not the current one, and lands on it when the payment clears. If the subscriber lets the term lapse instead, the subscription expires as normal and the schedule survives for whenever they renew. |
+| Scheduled **free** pending tier | Applied automatically; account stays `active`, `endsAt: null`, `downgradedFrom` set. No “access closed” email. |
+| **No** pending tier (plain lapse) | Moved onto the **`isDefaultFree`** tier; stays `active`, `endsAt: null`, emailed that they are now on Freemium. |
+| Scheduled **paid** pending tier | Subscription **expires** until they renew into that pending tier (renew is priced against it). |
 
 An **upgrade that is paid for cancels a scheduled downgrade** — paying to move up overtakes the
 move down.
@@ -991,6 +1099,7 @@ move down.
 **Errors:**
 - `422 invalid_tier_change` — target is a higher- or equal-priced tier (use upgrade), or is the current tier with nothing scheduled.
 - `422 tier_not_purchasable` — target tier is inactive.
+- `422 tier_not_priced` — target (or current) tier has no published price/currency.
 - `403 subscription_not_active` — the subscription never started or has already ended; there is no term to schedule against.
 - `422` validation — unknown `tier`.
 
@@ -1274,8 +1383,9 @@ price is a commercial act rather than account administration.
 | GET | `/admin/tiers/{tier}/allocations` | What this tier unlocks, component by component. |
 | PUT | `/admin/tiers/{tier}/allocations` | **Replace** the whole matrix, including the metering. |
 
-**PATCH body (all optional):** `name` (unique), `price` (≥ 0), `currency` (3 letters, uppercase),
-`billing_period` (`monthly` only), `is_active`, `sort_order`.
+**PATCH body (all optional):** `name` (unique), `price` (≥ 0 or `null` to unpublish), `currency`
+(3 letters, uppercase, or `null`), `billing_period` (`monthly` only), `is_active`, `sort_order`,
+`featured`, `description`, `benefits` (string array), `is_default_free`.
 
 What a change does, and does not, do:
 
@@ -1284,13 +1394,21 @@ What a change does, and does not, do:
   price up when it renews.
 - **`is_active: false` withdraws the tier from sale**: it disappears from the public `GET /tiers`,
   and signup or upgrade onto it is refused with `422 tier_not_purchasable`. Subscribers already on
-  it keep their access and can still renew.
-- **`price: 0` makes it free**, which is how Freemium works — signup and renewal then skip the
-  gateway entirely. Setting a paid tier to 0 therefore lets its subscribers renew for nothing.
+  it keep their access and can still renew. Refused on the default free tier
+  (`default_free_tier_price_locked`).
+- **`price: null` / missing `currency` unpublishes pricing**: the tier disappears from public
+  `GET /tiers`, and register / upgrade / downgrade / renew return `422 tier_not_priced`.
+- **`price: 0` makes it free** — signup and renewal skip the gateway. The tier flagged
+  `is_default_free` **must** stay at `0` (`422 default_free_tier_price_locked` otherwise). Setting
+  another paid tier to 0 lets *its* subscribers renew for nothing, but does not make it the default
+  free landing tier.
+- **`featured: true`** clears `featured` on every other tier.
+- **`is_default_free: true`** clears the flag on every other tier.
 - `billing_period` accepts only `monthly`: terms are added a month at a time throughout billing, so
   any other value would be a label that disagrees with what is charged.
 
-Tier payloads also carry `isActive` and `sortOrder` (and `subscribersCount` on admin listings).
+Tier payloads also carry `isActive`, `sortOrder`, `featured`, `description`, `benefits`,
+`isDefaultFree` (and `subscribersCount` on admin listings).
 
 **PUT `/admin/tiers/{tier}/allocations` body:**
 
@@ -1503,6 +1621,14 @@ a scheduled probe (`llm:probe`, every 5 minutes) keeps providers nobody is calli
         "errors24h": 31,
         "avgLatencyMs": 4870,
         "lastCheckedAt": "2026-10-20T10:54:40Z",
+        "credits": {
+          "source": "inferred",
+          "available": true,
+          "balance": null,
+          "currency": null,
+          "checkedAt": "2026-10-20T10:54:40Z",
+          "detail": "Latest call/probe succeeded — credits appear available."
+        },
         "recentErrors": [
           { "occurredAt": "2026-10-20T10:43:05Z", "code": "429", "message": "Quota exceeded for requests per minute", "context": "Product generation" }
         ]
@@ -1520,16 +1646,28 @@ a scheduled probe (`llm:probe`, every 5 minutes) keeps providers nobody is calli
 | `errors24h` | failures among those. Always ≤ `requests24h` |
 | `avgLatencyMs` | mean of **successful** calls only; `null` if there were none |
 | `lastCheckedAt` | newest real call *or* probe; `null` if the provider has never been called |
+| `credits` | spendable balance / credit signal — see below |
 | `recentErrors` | up to 20, newest first, real calls and probes alike. `[]` if none |
 | `recentErrors[].code` | HTTP status as a string (`"429"`), or `timeout`, `network`, `invalid_response`, `unknown` |
 | `recentErrors[].context` | `Product generation`, `QA`, `Revision`, `Topic commissioning`, `Health probe`, `Manual check` |
+
+**`credits` — how we know whether the account can still spend.**
+
+| Vendor | `credits.source` | How |
+|---|---|---|
+| **DeepSeek** | `balance_api` | `GET /user/balance` — `balance` + `currency` from `balance_infos` (USD preferred) |
+| **Moonshot / Kimi** | `balance_api` | `GET /v1/users/me/balance` — `available_balance` (USD on `.ai`, CNY on `.cn`) |
+| **MiniMax** | `balance_api` | `GET /account/query_balance` — PAYG `available_amount` |
+| **Anthropic, Gemini, OpenAI** | `inferred` | No balance endpoint on a normal API key. `available` is read from the latest probe/call: `false` on `402` or messages like “insufficient balance” / “exceeded_current_quota”; `true` after a success; `null` if unknown |
+
+`credits.available: false` forces `status: "down"` (empty wallet = cannot generate). Show `balance` + `currency` when `source` is `balance_api`; for `inferred`, lean on `detail` and `recentErrors`.
 
 **Status rules, in priority order.** These are the final thresholds; all of them are env-tunable
 (`config/llm.php` → `health`).
 
 | Status | Rule |
 |---|---|
-| `down` | the last **5** real calls all failed (and there were at least 5), **or** the newest probe in the window failed with `401`, `402`, `403`, any `5xx`, `timeout` or `network`, and nothing has succeeded since |
+| `down` | `credits.available === false`, **or** the last **5** real calls all failed (and there were at least 5), **or** the newest probe in the window failed with `401`, `402`, `403`, any `5xx`, `timeout` or `network`, and nothing has succeeded since |
 | `degraded` | not `down`, and the error rate over the window is **≥ 10 %**, **or** mean latency is more than **2×** the provider's own 7-day mean (needs ≥ 3 successes in the window and ≥ 10 over 7 days, or the comparison is noise), **or** the newest probe failed for any other reason and nothing has succeeded since |
 | `idle` | no real calls in the window and no failing probe. A provider switched off with `isActive: false` lands here: it is not probed, so it has no failing probe to be `down` for |
 | `healthy` | everything else |
@@ -1606,7 +1744,8 @@ Drill-down that includes hidden and unpublished products (admins see everything)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/vault/components` | All 9 components, each with `productsCount` and the component's `averageRating`/`ratingsCount` across every product it holds. |
+| GET | `/admin/vault/components` | All 9 components, each with `productsCount`, `color`, and the component's `averageRating`/`ratingsCount` across every product it holds. |
+| PATCH | `/admin/vault/components/{component}` | Set `color` (`component-1` … `component-12`, unique, or `null`). |
 | GET | `/admin/vault/components/{component}/products` | All products of a component (paginated). Each row carries `status`, `isHidden` and `readsCount` on top of the public listing fields. `meta.statuses` (each product `publicId` → `{ status, isHidden }`) is still sent for clients written against it. |
 | GET | `/admin/vault/products/{product}` | **One product in full, at every content level, whatever its status** — `body`, `redactedBody`, `redactionApproved`, `status`, `isHidden`, `readsCount`, `approvedAt`. This is the vault's article view. |
 | POST | `/admin/products/{product}/hide` | Immediately hide a product from subscribers. |
@@ -1895,7 +2034,9 @@ should agree with them.
 | A payment fails (declined, expired, short) | "Your payment did not go through" | why, and a link to `/payment/return/{publicId}` to try again |
 | 7 days before a term ends | "Your subscription ends in N days" | the end date, and a link to `{portal}/subscription` |
 | The last day | "Your subscription ends tomorrow" | as above; each notice is sent once |
-| The term lapses | "Your subscription has ended" | that access has closed, and how to restore it |
+| A paid term lapses onto Freemium | "Your subscription moved to Freemium" | that the previous plan ended, the account is now on Freemium, and how to upgrade |
+| A paid pending downgrade is still unpaid at lapse | "Your subscription has ended" | that paid access has closed until they renew |
+| A product is **first** published | "New: {title}" or a daily digest | title, component, date, **abstract only**, link to `{portal}/portal/products/{publicId}`, unsubscribe. Honours `GET /me/notification-preferences`. Edit/re-publish does **not** re-send. |
 
 Because the PDF is attached, the portal does **not** need to offer an invoice download to close the
 loop — though `GET /me/invoices/{invoice}` still carries the same data as JSON.

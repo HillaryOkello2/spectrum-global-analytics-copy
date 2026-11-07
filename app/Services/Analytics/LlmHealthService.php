@@ -4,6 +4,8 @@ namespace App\Services\Analytics;
 
 use App\Models\LlmCallLog;
 use App\Models\LlmProvider;
+use App\Services\Llm\DTOs\LlmCredits;
+use App\Services\Llm\LlmCreditsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
@@ -15,10 +17,17 @@ use Illuminate\Support\Facades\Cache;
  * Every figure is read from llm_call_logs, which LlmCallRecorder writes one row
  * of per attempt. Statuses are decided here, not in the frontend — the rules
  * are documented in docs/API_REFERENCE.md and implemented in statusFor().
+ *
+ * Credits come from LlmCreditsService: balance APIs where the vendor has one,
+ * otherwise inferred from out-of-credit probe/call errors.
  */
 class LlmHealthService
 {
     private const CACHE_KEY = 'analytics:llm-health';
+
+    public function __construct(
+        private readonly LlmCreditsService $credits,
+    ) {}
 
     /**
      * Non-numeric error codes that mean the provider itself is unavailable or
@@ -138,6 +147,7 @@ class LlmHealthService
         $recent = $this->recentCalls($provider, $windowFrom);
         $latestProbe = $this->latestProbe($provider, $windowFrom);
         $lastCheckedAt = $this->lastCheckedAt($provider);
+        $credits = $this->credits->for($provider);
 
         return [
             'publicId' => $provider->public_id,
@@ -152,11 +162,13 @@ class LlmHealthService
                 $baseline,
                 $recent,
                 $latestProbe,
+                $credits,
             ),
             'requests24h' => $requests,
             'errors24h' => $errors,
             'avgLatencyMs' => $avgLatency,
             'lastCheckedAt' => $lastCheckedAt?->toIso8601ZuluString(),
+            'credits' => $credits->toArray(),
             'recentErrors' => $this->recentErrors($provider, $windowFrom),
         ];
     }
@@ -174,8 +186,16 @@ class LlmHealthService
         ?object $baseline,
         EloquentCollection $recent,
         ?LlmCallLog $latestProbe,
+        LlmCredits $credits,
     ): string {
         $consecutive = (int) config('llm.health.down_consecutive_failures', 5);
+
+        // 0. down — balance API (or inferred out-of-credit) says there is
+        //    nothing left to spend. Same colour as a revoked key: the model
+        //    cannot answer until the account is topped up.
+        if ($credits->available === false) {
+            return 'down';
+        }
 
         // 1. down — the last N real calls all failed. N must actually have
         //    happened: one failure on an otherwise quiet provider is a

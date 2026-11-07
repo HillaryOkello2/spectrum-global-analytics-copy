@@ -31,6 +31,9 @@ Schedule::command('subscriptions:expire')->dailyAt('00:30');
 // Expiry notices a week out and on the last day, at an hour someone will read.
 Schedule::command('subscriptions:remind')->dailyAt('08:00');
 
+// Daily digest of new articles for subscribers who chose "daily" delivery.
+Schedule::command('articles:send-digests')->dailyAt('07:00');
+
 // PGW calls back on success only, so a declined or ignored M-Pesa prompt has to
 // be timed out here before it can be retried.
 Schedule::command('payments:expire-pending')->everyFiveMinutes();

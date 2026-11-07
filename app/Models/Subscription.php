@@ -22,6 +22,8 @@ class Subscription extends Model
         'starts_at',
         'ends_at',
         'last_reminder_days',
+        'downgraded_from_tier_name',
+        'downgraded_from_ended_at',
     ];
 
     protected function casts(): array
@@ -30,6 +32,7 @@ class Subscription extends Model
             'status' => SubscriptionStatus::class,
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'downgraded_from_ended_at' => 'datetime',
         ];
     }
 

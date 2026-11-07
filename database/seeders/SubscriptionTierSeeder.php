@@ -75,6 +75,10 @@ class SubscriptionTierSeeder extends Seeder
                 'billing_period' => 'monthly',
                 'is_active' => true,
                 'sort_order' => ++$sortOrder,
+                'is_default_free' => $name === 'Freemium',
+                'featured' => $name === 'Premium',
+                'description' => null,
+                'benefits' => [],
             ]);
 
             // Only the components that produce documents. Abstract Papers

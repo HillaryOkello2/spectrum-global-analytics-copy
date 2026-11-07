@@ -175,6 +175,15 @@ return [
             // needs 10 minutes to emit one token is not live.
             'timeout' => (int) env('LLM_PROBE_TIMEOUT', 30),
         ],
+
+        // Credit / balance signal on each health node.
+        // DeepSeek, Moonshot and MiniMax expose a balance HTTP endpoint; the
+        // others (Anthropic, Gemini, OpenAI) do not on a normal API key, so
+        // their `credits` block is inferred from 402 / "insufficient balance"
+        // style probe and call failures instead.
+        'credits' => [
+            'balance_drivers' => ['deepseek', 'moonshot', 'minimax'],
+        ],
     ],
 
 ];

@@ -4,6 +4,7 @@ use App\Models\LlmCallLog;
 use App\Models\LlmProvider;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function (): void {
     // The snapshot is cached for 15s; without this a test would read the
@@ -41,7 +42,9 @@ it('returns every provider, including ones nobody has called', function (): void
             ->and($provider['errors24h'])->toBe(0)
             ->and($provider['avgLatencyMs'])->toBeNull()
             ->and($provider['lastCheckedAt'])->toBeNull()
-            ->and($provider['recentErrors'])->toBe([]);
+            ->and($provider['recentErrors'])->toBe([])
+            ->and($provider)->toHaveKey('credits')
+            ->and($provider['credits'])->toHaveKeys(['source', 'available', 'balance', 'currency', 'checkedAt', 'detail']);
     }
 });
 
@@ -181,4 +184,73 @@ it('never calls a provider healthy on the strength of a failing probe alone', fu
     LlmCallLog::factory()->for($provider, 'provider')->probe()->failed('429')->create();
 
     expect(health(healthAdmin())['providers'][0]['status'])->toBe('degraded');
+});
+
+it('fetches DeepSeek balance from the vendor balance endpoint', function (): void {
+    config(['llm.fake' => false, 'llm.drivers.deepseek.api_key' => 'sk-test']);
+
+    Http::fake([
+        'api.deepseek.com/user/balance' => Http::response([
+            'is_available' => true,
+            'balance_infos' => [
+                ['currency' => 'USD', 'total_balance' => '42.10', 'granted_balance' => '0', 'topped_up_balance' => '42.10'],
+            ],
+        ]),
+    ]);
+
+    $provider = LlmProvider::factory()->create(['driver' => 'deepseek', 'vendor' => 'DeepSeek']);
+
+    $node = health(healthAdmin())['providers'][0];
+
+    expect($node['credits']['source'])->toBe('balance_api')
+        ->and($node['credits']['available'])->toBeTrue()
+        ->and($node['credits']['balance'])->toBe('42.10')
+        ->and($node['credits']['currency'])->toBe('USD')
+        ->and($node['status'])->toBe('idle');
+});
+
+it('marks a zero-balance DeepSeek account as down', function (): void {
+    config(['llm.fake' => false, 'llm.drivers.deepseek.api_key' => 'sk-test']);
+
+    Http::fake([
+        'api.deepseek.com/user/balance' => Http::response([
+            'is_available' => false,
+            'balance_infos' => [
+                ['currency' => 'USD', 'total_balance' => '0.00', 'granted_balance' => '0', 'topped_up_balance' => '0'],
+            ],
+        ]),
+    ]);
+
+    LlmProvider::factory()->create(['driver' => 'deepseek', 'vendor' => 'DeepSeek']);
+
+    $node = health(healthAdmin())['providers'][0];
+
+    expect($node['credits']['available'])->toBeFalse()
+        ->and($node['status'])->toBe('down');
+});
+
+it('infers exhausted credits from a 402 probe when the vendor has no balance API', function (): void {
+    // Anthropic / Gemini / OpenAI — no balance endpoint on a normal key.
+    $provider = LlmProvider::factory()->create(['driver' => 'anthropic', 'vendor' => 'Anthropic']);
+
+    LlmCallLog::factory()->for($provider, 'provider')->probe()
+        ->failed('402', 'Your credit balance is too low to access the Anthropic API')
+        ->create();
+
+    $node = health(healthAdmin())['providers'][0];
+
+    expect($node['credits']['source'])->toBe('inferred')
+        ->and($node['credits']['available'])->toBeFalse()
+        ->and($node['status'])->toBe('down');
+});
+
+it('infers credits available after a successful probe on providers without a balance API', function (): void {
+    $provider = LlmProvider::factory()->create(['driver' => 'openai', 'vendor' => 'OpenAI']);
+
+    LlmCallLog::factory()->for($provider, 'provider')->probe()->create();
+
+    $node = health(healthAdmin())['providers'][0];
+
+    expect($node['credits']['source'])->toBe('inferred')
+        ->and($node['credits']['available'])->toBeTrue();
 });

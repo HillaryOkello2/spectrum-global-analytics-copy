@@ -28,6 +28,8 @@ return [
         'payment_return' => env('FRONTEND_PAYMENT_RETURN_PATH', '/payment/return'),
         // Where a subscriber renews or upgrades, linked from expiry notices.
         'subscription' => env('FRONTEND_SUBSCRIPTION_PATH', '/subscription'),
+        // Product reader in the portal; publicId is appended.
+        'product' => env('FRONTEND_PRODUCT_PATH', '/portal/products'),
     ],
 
 ];

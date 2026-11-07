@@ -147,7 +147,9 @@ class SubscriptionActivator
             // A fresh term starts its expiry notices over.
             'last_reminder_days' => null,
             'starts_at' => $scheduled ? ($subscription->starts_at ?? now()) : now(),
-            'ends_at' => $base->copy()->addMonth(),
+            'ends_at' => $tier->isFree() ? null : $base->copy()->addMonth(),
+            'downgraded_from_tier_name' => null,
+            'downgraded_from_ended_at' => null,
         ]);
     }
 

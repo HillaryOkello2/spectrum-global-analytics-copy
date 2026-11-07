@@ -21,6 +21,9 @@ Route::prefix('v1')->as('api.')->group(function (): void {
             ->only('index')->names('catalog.abstracts');
         Route::apiResource('tiers', Public\TierController::class)->only('index');
         Route::get('products/{product}/preview', Public\ProductPreviewController::class)->name('products.preview');
+        // Signed link from new-article emails — no auth, turns emails off.
+        Route::get('notification-preferences/unsubscribe/{subscriber}', Public\UnsubscribeArticleEmailsController::class)
+            ->name('notification-preferences.unsubscribe');
 
         // Public, because a paid signup has no token until its payment
         // succeeds. The payment's UUID is the only key (§18.3).
@@ -69,6 +72,10 @@ Route::prefix('v1')->as('api.')->group(function (): void {
                 ->name('me.subscription.downgrade');
             Route::delete('me/subscription/downgrade', [Subscriber\DowngradeSubscriptionController::class, 'destroy'])
                 ->name('me.subscription.downgrade.cancel');
+            Route::get('me/notification-preferences', [Subscriber\NotificationPreferencesController::class, 'show'])
+                ->name('me.notification-preferences.show');
+            Route::patch('me/notification-preferences', [Subscriber\NotificationPreferencesController::class, 'update'])
+                ->name('me.notification-preferences.update');
             Route::apiResource('me/invoices', Subscriber\InvoiceController::class)
                 ->only(['index', 'show'])->names('me.invoices');
             Route::apiResource('products', Subscriber\ProductController::class)->only('show');
@@ -132,7 +139,7 @@ Route::prefix('v1')->as('api.')->group(function (): void {
 
             Route::middleware('permission:manage vault')->group(function (): void {
                 Route::apiResource('vault/components', Admin\Vault\VaultComponentController::class)
-                    ->only('index')->names('vault.components');
+                    ->only(['index', 'update'])->names('vault.components');
                 Route::apiResource('vault/components.products', Admin\Vault\VaultComponentProductController::class)
                     ->only('index')->names('vault.components.products');
                 // One product in full for staff review. GET /products/{product}

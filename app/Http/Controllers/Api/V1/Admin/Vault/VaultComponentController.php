@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\V1\Admin\Vault;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\UpdateVaultComponentRequest;
 use App\Http\Resources\ComponentResource;
 use App\Models\Component;
+use App\Support\Audit;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -34,5 +36,18 @@ class VaultComponentController extends Controller
                 ->orderBy('sort_order')
                 ->get(),
         );
+    }
+
+    public function update(UpdateVaultComponentRequest $request, Component $component): ComponentResource
+    {
+        $before = $component->only(array_keys($request->validated()));
+
+        $component->update($request->validated());
+
+        Audit::of($component)->by($request->user())
+            ->changes($before, $request->validated())
+            ->log('vault component updated');
+
+        return new ComponentResource($component->refresh());
     }
 }

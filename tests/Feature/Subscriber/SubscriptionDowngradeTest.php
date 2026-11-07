@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Notification;
 function downgradeTiers(): array
 {
     return [
-        SubscriptionTier::factory()->free()->create(['name' => 'Freemium', 'sort_order' => 1]),
+        SubscriptionTier::factory()->defaultFree()->create(['name' => 'Freemium', 'sort_order' => 1]),
         SubscriptionTier::factory()->create(['name' => 'Premium', 'price' => 49.99, 'sort_order' => 2]),
         SubscriptionTier::factory()->create(['name' => 'Platinum', 'price' => 199.99, 'sort_order' => 3]),
     ];
@@ -223,7 +223,7 @@ it('rolls a lapsed term onto a scheduled free tier instead of expiring it', func
         ->and($subscription->tier_id)->toBe($freemium->id)
         ->and($subscription->pending_tier_id)->toBeNull()
         ->and($subscription->status)->toBe(SubscriptionStatus::Active)
-        ->and($subscription->ends_at->toDateString())->toBe(now()->addMonth()->toDateString());
+        ->and($subscription->ends_at)->toBeNull();
 
     Notification::assertNotSentTo($user, SubscriptionEnded::class);
 });

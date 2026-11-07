@@ -4,6 +4,7 @@ namespace App\Services\Publishing;
 
 use App\Enums\ProductStatus;
 use App\Enums\TaskStatus;
+use App\Jobs\NotifySubscribersOfNewArticleJob;
 use App\Models\Product;
 use App\Support\Audit;
 use Illuminate\Support\Collection;
@@ -67,9 +68,12 @@ class ReleaseService
 
     private function release(Product $product): void
     {
+        // Only the first publish emails subscribers; an edit or re-release must not.
+        $firstPublish = $product->published_at === null;
+
         $product->update([
             'status' => ProductStatus::Published,
-            'published_at' => now(),
+            'published_at' => $product->published_at ?? now(),
         ]);
 
         // The task board mirrors the product: a released product's task is done.
@@ -82,5 +86,9 @@ class ReleaseService
             ->change('status', ProductStatus::Approved, ProductStatus::Published)
             ->with(['code' => $product->code])
             ->log('product released');
+
+        if ($firstPublish) {
+            NotifySubscribersOfNewArticleJob::dispatch($product->fresh(['component']));
+        }
     }
 }

@@ -34,7 +34,8 @@ it('activates a freemium signup immediately without payment', function (): void 
 
     expect($user->status)->toBe(UserStatus::Active)
         ->and($user->activeSubscription->status)->toBe(SubscriptionStatus::Active)
-        ->and($user->activeSubscription->ends_at->diffInDays($user->activeSubscription->starts_at->addMonth()))->toBe(0.0)
+        // Freemium never term-lapses into "no access".
+        ->and($user->activeSubscription->ends_at)->toBeNull()
         ->and($user->payments()->count())->toBe(0);
 });
 

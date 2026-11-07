@@ -5,6 +5,7 @@ namespace App\Services\Billing;
 use App\Enums\PaymentMethod;
 use App\Enums\SubscriptionStatus;
 use App\Enums\UserStatus;
+use App\Exceptions\Domain\TierNotPricedException;
 use App\Exceptions\Domain\TierNotPurchasableException;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
@@ -39,6 +40,10 @@ class SignupService
             throw new TierNotPurchasableException;
         }
 
+        if (! $tier->isPriced()) {
+            throw new TierNotPricedException;
+        }
+
         return $tier->isFree()
             ? $this->registerFreemium($data, $tier)
             : $this->registerPaid($data, $tier, $method ?? PaymentMethod::Mpesa);
@@ -50,12 +55,13 @@ class SignupService
             $user = User::create([...$data, 'status' => UserStatus::Active]);
             $user->assignRole('subscriber');
 
+            // Freemium has no term end — it does not lapse into "no access".
             $subscription = Subscription::create([
                 'user_id' => $user->id,
                 'tier_id' => $tier->id,
                 'status' => SubscriptionStatus::Active,
                 'starts_at' => now(),
-                'ends_at' => now()->addMonth(),
+                'ends_at' => null,
             ]);
 
             return [$user, $subscription];

@@ -9,6 +9,39 @@ per-endpoint reference (request/response schemas, try-it-out, code samples) live
 
 Everything is under `/api/v1`. JSON only.
 
+## ✅ Added: LLM health credits / balance (2026-11-07)
+
+`GET /admin/analytics/llm-health` providers now include a **`credits`** object:
+
+- **DeepSeek / Moonshot / MiniMax** — `source: "balance_api"` with live `balance` + `currency` from the vendor balance endpoint. Zero balance → `status: "down"`.
+- **Anthropic / Gemini / OpenAI** — no balance API on a normal key; `source: "inferred"` from probe/call errors (`402`, “insufficient balance”, etc.). Same `down` when exhausted.
+
+Drop any hardcoded credit UI; render `credits.balance` when present, otherwise `credits.detail` / `recentErrors`.
+
+## ✅ Added: tiers, Freemium lapse, colours, article emails (2026-11-07)
+
+Backend closed the gaps in `docs/backend-requirements-3.md`. Details and examples in
+`API_REFERENCE.md` (“Added — 2026-11-07”).
+
+- **`GET /tiers`** now always includes `featured`, `description`, `benefits[]`, `isDefaultFree`,
+  `isActive`, `sortOrder`. Use `isDefaultFree` (not the name “Freemium”) for the free landing tier
+  and the admin price lock. At most one `featured: true`. Unpriced tiers are **omitted**; signup /
+  upgrade / downgrade / renew onto one returns `422 tier_not_priced`.
+- **Admin** `PATCH /admin/tiers/{tier}` accepts those fields; `featured: true` / `is_default_free: true`
+  are exclusive; pricing the default free tier above 0 (or deactivating it) returns
+  `422 default_free_tier_price_locked`.
+- **Lapse → Freemium:** when a paid term ends with no unpaid paid pending tier,
+  `subscriptions:expire` moves the account onto the default free tier (`status: active`,
+  `endsAt: null`). `GET /me/subscription` may show `downgradedFrom: { tierName, endedAt }`. Freemium
+  itself never expires into “no access”.
+- **`color`** on `GET /catalog/components` — palette keys `component-1` … `component-12`. Set via
+  `PATCH /admin/vault/components/{component}`.
+- **New-article emails** on first publish. Preferences: `GET`/`PATCH /me/notification-preferences`
+  (`newArticles`: `each` \| `daily` \| `none`, default `daily`; `components`: codes or `null` = all
+  readable). Add a preferences section on the profile page; emails include an unsubscribe link.
+- **`pendingTier.publicId`** is always present when a downgrade is scheduled (full tier object).
+  Match renewal pricing by id.
+
 ## ✅ Added: Abstract Papers, downgrades, welcome mail (2026-10-22)
 
 Three things, all additive. Details in `API_REFERENCE.md` — the "Added — 2026-10-22" table at the top.
@@ -41,8 +74,11 @@ inbox. Full table in `API_REFERENCE.md` §11.
 - **Payment failed** — declined, expired or short-paid, with a link back to
   `/payment/return/{publicId}` to retry. Worth knowing when writing the failure screen: they will
   have this email even if they closed the tab.
-- **Expiry notices** — 7 days out and on the last day, plus one when the term actually lapses. All
-  link to `{subscriber portal}/subscription`, so that route needs to exist.
+- **Expiry notices** — 7 days out and on the last day. A plain paid lapse moves the account onto
+  Freemium (email says so) rather than closing access entirely. All link to
+  `{subscriber portal}/subscription`, so that route needs to exist.
+- **New article published** — honour `GET /me/notification-preferences`; link to
+  `/portal/products/{publicId}`.
 
 ## ✅ Fixed: filing a topic needs only a title and a component (2026-10-05)
 
@@ -185,14 +221,15 @@ subscriber portal — and that page posts both values, with the new password, to
 ### Public Catalogue (public, no token)
 Browse without logging in (FR-08):
 - `GET /catalog/components` — the 9 Components plus **Abstract Papers**, in `sortOrder`, each with
-  `productsCount`, its own `averageRating`/`ratingsCount` (absent average = nobody has rated it) and
-  `isVirtual` (`true` for Abstract Papers only).
+  `productsCount`, its own `averageRating`/`ratingsCount` (absent average = nobody has rated it),
+  `isVirtual` (`true` for Abstract Papers only), and **`color`** (design-token key or `null`).
 - `GET /catalog/components/{component}/products` — published products (title + excerpt only), paginated.
 - `GET /catalog/abstracts` — **Abstract Papers**: every published abstract, paginated, each naming
   the `product` it belongs to. `?component=DB` narrows it; `?search=` matches title or abstract.
 - `GET /products/{product}/preview` — **abstract + `locked: true`** for any product (the gated
   teaser: render the abstract, a lock, and a Subscribe CTA).
-- `GET /tiers` — subscription tier cards with their per-component allocations (for the pricing page).
+- `GET /tiers` — subscription tier cards with allocations, plus `featured`, `description`,
+  `benefits`, `isDefaultFree`, `isActive`, `sortOrder` (active + priced only).
 
 > Hierarchy is **Component → Product**. `{product}` in URLs is a `publicId`; `{component}` accepts
 > either a `publicId` or the component `code` (e.g. `DB`) — codes are globally unique now.
@@ -210,8 +247,9 @@ nested inside a product payload.
 - `GET /me/stats` — the caller's own `articlesRead`, `reads`, `ratingsGiven`, `averageRatingGiven`.
 - `GET /me`, `PATCH /me`, `PUT /me/password` — profile + password. **Open to staff too**, the only
   routes here that are: staff need them to change the temporary password they are emailed.
-- `GET /me/subscription` — subscription details incl. tier allocations, and `pendingTier` /
-  `pendingTierEffectiveAt` when a downgrade is scheduled.
+- `GET /me/subscription` — subscription details incl. `tier.publicId` + allocations,
+  `pendingTier` / `pendingTierEffectiveAt` (with `publicId`), and optional `downgradedFrom`.
+- `GET`/`PATCH /me/notification-preferences` — `newArticles` + `components` for publish emails.
 - `POST /me/subscription/upgrade` — higher tier, `202` + payment, fresh term once it clears.
 - `POST /me/subscription/downgrade` — cheaper tier, `200`, applied at the end of the paid term.
   `DELETE` the same path to call it off.
@@ -250,10 +288,11 @@ nested inside a product payload.
   the three built-in roles are flagged `isSystem` and reject edits with `protected_role`.
   Admin-portal access is permission-gated per section — see the table in API_REFERENCE.md §9.
 - Subscription tiers: `GET /admin/tiers` (inactive included, with `subscribersCount`),
-  `GET/PATCH /admin/tiers/{tier}` — `name`, `price`, `currency`, `is_active`, `sort_order`, all
-  optional. Needs the **`manage subscription tiers`** permission. Price changes apply to the next
-  payment, not to a running term; `is_active: false` withdraws a tier from sale without touching its
-  current subscribers.
+  `GET/PATCH /admin/tiers/{tier}` — also `featured`, `description`, `benefits`, `is_default_free`;
+  `price`/`currency` may be `null` to unpublish. Needs **`manage subscription tiers`**. Lock the
+  price editor with `isDefaultFree`, not the name “Freemium”.
+- Vault component colour: `PATCH /admin/vault/components/{component}` with `{ "color": "component-N" }`
+  (`manage vault`).
 - Tier access matrix: `GET/PUT /admin/tiers/{tier}/allocations` — **replace the whole set** of
   `{ component, access_type, monthly_limit }`. `component` takes a code or publicId;
   `monthly_limit` is required on `metered` and refused otherwise; anything left out of the

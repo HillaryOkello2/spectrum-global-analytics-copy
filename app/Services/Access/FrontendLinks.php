@@ -3,7 +3,9 @@
 namespace App\Services\Access;
 
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\User;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Links into the frontend apps, for the mail this API-only backend sends.
@@ -38,6 +40,28 @@ class FrontendLinks
     public function subscription(User $user): string
     {
         return $this->to($user, config('frontend.paths.subscription'));
+    }
+
+    /**
+     * Direct link to a published product in the subscriber portal.
+     */
+    public function product(User $user, Product $product): string
+    {
+        $base = rtrim((string) config('frontend.paths.product'), '/');
+
+        return $this->to($user, $base.'/'.$product->public_id);
+    }
+
+    /**
+     * Signed API URL that turns off new-article emails without requiring login.
+     */
+    public function unsubscribeNotifications(User $user): string
+    {
+        return URL::temporarySignedRoute(
+            'api.notification-preferences.unsubscribe',
+            now()->addDays(30),
+            ['subscriber' => $user->public_id],
+        );
     }
 
     /**

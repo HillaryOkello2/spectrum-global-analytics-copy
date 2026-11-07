@@ -25,6 +25,10 @@ class ComponentResource extends JsonResource
             // listing rather than a product listing.
             'isVirtual' => (bool) $this->is_virtual,
             'sortOrder' => $this->sort_order,
+            // Design-token key (component-1 … component-12). Null means the
+            // frontend picks a fallback; stored so colours never shift when
+            // another component is added.
+            'color' => $this->color,
             // Present only where the endpoint counted it — never on a component
             // nested inside a product or topic payload.
             'productsCount' => $this->whenCounted('products', fn ($count) => (int) $count),

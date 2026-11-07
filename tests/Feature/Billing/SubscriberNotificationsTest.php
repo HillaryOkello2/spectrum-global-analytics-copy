@@ -172,13 +172,18 @@ it('starts the notices over when the term is extended', function (): void {
     expect($subscription->refresh()->last_reminder_days)->toBeNull();
 });
 
-it('tells a subscriber when the term has actually lapsed', function (): void {
+it('moves a lapsed paid subscriber onto Freemium and emails them', function (): void {
     Notification::fake();
 
+    SubscriptionTier::factory()->defaultFree()->create();
     $user = notifiedSubscriber(['ends_at' => now()->subDay()]);
 
     $this->artisan('subscriptions:expire')->assertSuccessful();
 
     Notification::assertSentTo($user, SubscriptionEnded::class);
-    expect($user->subscriptions()->first()->status)->toBe(SubscriptionStatus::Expired);
+    $subscription = $user->subscriptions()->first();
+    expect($subscription->status)->toBe(SubscriptionStatus::Active)
+        ->and($subscription->tier->is_default_free)->toBeTrue()
+        ->and($subscription->ends_at)->toBeNull()
+        ->and($subscription->downgraded_from_tier_name)->toBe('Premium');
 });

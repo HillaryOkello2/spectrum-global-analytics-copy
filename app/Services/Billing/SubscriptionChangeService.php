@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\SubscriptionStatus;
 use App\Exceptions\Domain\InvalidTierChangeException;
 use App\Exceptions\Domain\SubscriptionNotActiveException;
+use App\Exceptions\Domain\TierNotPricedException;
 use App\Exceptions\Domain\TierNotPurchasableException;
 use App\Models\Subscription;
 use App\Models\SubscriptionTier;
@@ -37,6 +38,10 @@ class SubscriptionChangeService
     {
         $subscription = $this->currentSubscription($user);
         $tier = $subscription->nextTier() ?? $subscription->tier;
+
+        if (! $tier->isPriced()) {
+            throw new TierNotPricedException;
+        }
 
         if ($tier->isFree()) {
             return $this->extendFreeImmediately($subscription, $tier);
@@ -70,6 +75,10 @@ class SubscriptionChangeService
 
         if (! $target->is_active) {
             throw new TierNotPurchasableException;
+        }
+
+        if (! $target->isPriced() || ! $current->isPriced()) {
+            throw new TierNotPricedException;
         }
 
         if ($target->id === $current->id) {
@@ -118,6 +127,10 @@ class SubscriptionChangeService
 
         if (! $target->is_active) {
             throw new TierNotPurchasableException;
+        }
+
+        if (! $target->isPriced() || ! $current->isPriced()) {
+            throw new TierNotPricedException;
         }
 
         if ((float) $target->price >= (float) $current->price) {
@@ -200,7 +213,10 @@ class SubscriptionChangeService
             'status' => SubscriptionStatus::Active,
             // A fresh term starts its expiry notices over.
             'last_reminder_days' => null,
-            'ends_at' => now()->addMonth(),
+            // Free tiers do not term-lapse into "no access".
+            'ends_at' => null,
+            'downgraded_from_tier_name' => $fromTier,
+            'downgraded_from_ended_at' => $subscription->ends_at ?? now(),
         ]);
 
         Audit::of($subscription)->by($subscription->user)
@@ -209,6 +225,42 @@ class SubscriptionChangeService
             ->log('scheduled downgrade applied at end of term');
 
         return $subscription->refresh();
+    }
+
+    /**
+     * Move a lapsed paid subscription onto the default free tier with no
+     * payment. Called by subscriptions:expire when nothing was scheduled, or
+     * when a free pending downgrade was already applied separately.
+     */
+    public function lapseOntoDefaultFree(Subscription $subscription): Subscription
+    {
+        $free = SubscriptionTier::defaultFree();
+
+        if ($free === null) {
+            throw new InvalidTierChangeException('No default free tier is configured.');
+        }
+
+        $before = $subscription->only(['status', 'ends_at', 'tier_id', 'pending_tier_id']);
+        $fromTier = $subscription->tier?->name;
+        $endedAt = $subscription->ends_at ?? now();
+
+        $subscription->update([
+            'tier_id' => $free->id,
+            'pending_tier_id' => null,
+            'status' => SubscriptionStatus::Active,
+            'last_reminder_days' => null,
+            'ends_at' => null,
+            'downgraded_from_tier_name' => $fromTier,
+            'downgraded_from_ended_at' => $endedAt,
+        ]);
+
+        Audit::of($subscription)
+            ->change('tier', $fromTier, $free->name)
+            ->changes($before, $subscription->only(['status', 'ends_at', 'tier_id', 'pending_tier_id']))
+            ->with(['via' => 'system'])
+            ->log('lapsed subscription moved to default free tier');
+
+        return $subscription->refresh()->load(['user', 'tier']);
     }
 
     private function currentSubscription(User $user): Subscription
@@ -229,7 +281,6 @@ class SubscriptionChangeService
      */
     private function extendFreeImmediately(Subscription $subscription, SubscriptionTier $tier): SubscriptionChangeResult
     {
-        $base = $subscription->ends_at?->isFuture() ? $subscription->ends_at : now();
         $before = $subscription->only(['tier_id', 'status', 'starts_at', 'ends_at']);
         $fromTier = $subscription->tier?->name;
 
@@ -238,8 +289,11 @@ class SubscriptionChangeService
             'pending_tier_id' => null,
             'status' => SubscriptionStatus::Active,
             'starts_at' => $subscription->starts_at ?? now(),
-            'ends_at' => $base->copy()->addMonth(),
+            // Free tiers never expire into "no access".
+            'ends_at' => null,
             'last_reminder_days' => null,
+            'downgraded_from_tier_name' => null,
+            'downgraded_from_ended_at' => null,
         ]);
 
         $audit = Audit::of($subscription)->by($subscription->user)

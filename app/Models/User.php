@@ -39,6 +39,7 @@ class User extends Authenticatable
         'country',
         'password',
         'status',
+        'notification_preferences',
     ];
 
     protected $hidden = [
@@ -52,6 +53,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'status' => UserStatus::class,
+            'notification_preferences' => 'array',
         ];
     }
 
